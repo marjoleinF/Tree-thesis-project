@@ -1,0 +1,249 @@
+---
+title: "BART"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+size<-function(b){
+  col=c("red","blue","green","orange")
+  plot(1, type="n", xlab="prob of splitting", ylab="Tree Depth", xlim=c(0, 10), ylim=c(0, 1))
+  alpha=c(0.5,0.7,0.9,1)
+  d=seq(0,10,1)
+  for (i in 1:length(alpha)) {
+   lines(d,alpha[i]*(1+d)^(-b),col=col[i]) 
+  }
+  legend('topright',legend=c("alpha=0.5","alpha=0.7","alpha=0.9","alpha=1"),col=col,lty=1,lwd=2,cex=0.6,bty='n')
+  title(paste('Beta=',b))}
+
+```
+Bayesian Additive Regression Trees (BART) is a kind of tree-based model. In this model, we first grow many small subtrees and then sum the predictions of these small subtree models to get our final prediction. In Hill's article, she defines a subtree with a parameter pair $(T, M)$, where T denotes the tree and M denotes the parameters for the leaves of one tree.
+  
+To avoid overfitting, regularization priors are applied. Due to the independence assumption, we only need to define three priors for p(T), p(M$|$T), p($\sigma^2$).
+
+  First, We need to control the maximum depth of each subtree to avoid overfitting. Prior of p(T) controls the depth of each subtree. The probability that a node at depth d splits is $$\alpha(1+d)^{-\beta},\alpha \in (0,1), \beta \in [1,\infty)$$
+```{r,echo=FALSE}
+par(mfrow=c(1,3))
+size(1)
+size(2)
+size(3)
+```
+  
+  The plots above show how different $\alpha, \beta$ influence this probability. Generally speaking, when $\alpha$ gets larger the probability that a node at depth d splits gets stronger. And when $\beta$ gets larger this probability goes down faster as the tree goes deeper.
+  
+  Second, we need to shrink the sum of the fit across trees toward zero. So we assume that the prior distribution for each means $\mu$ follows a normal distribution.$$\mu \sim N(0, \sigma_\mu^2), \sigma_\mu=0.5/(k\sqrt m)$$ and when k=2,the response variable has $95%$ probability lies between $-0.5$ and $0.5$.
+  
+  Third, the prior on $\sigma^2$ is specified as an inverse $\chi^2$ distribution.The inverse $\chi^2$ distribution is the prior of the normal distribution when its variance is unknown.
+  
+  In computation, instead of fitting the original response variable y, we fit the residual R $(y-$ the predictions of the other subtrees) . The subtrees are updated one by one several times. When updating a single subtree we first choose its T using the Metropolis-Hasting approach and then update its M. After several loops, we can get our final BART model.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r,eval=F,hide=T,echo=F}
+library('evtree')
+library('dbarts')
+n_trees=c(100,200,300,400,500)
+power=c(1,2,3)
+base=c(0.1,0.3,0.5,0.7,0.9)
+
+result=numeric(nrow(train_test))
+rmse_train=numeric(5)
+a=matrix(nrow=length(base),ncol=length(power))
+set.seed(10)
+for(k in 1:length(power)){
+for (j in 1:length(base)) {
+  for (i in 1:5) {
+  
+  train_test=train[seq(0,nrow(train),5),]
+  train_train=train[-seq(0,nrow(train),5),]
+  BART_train<-bart2(medv~.,data=train_train,test = train_test,power = power[k],base=base[j])
+  #EV<-evtree(medv~.,data=train_train,alpha=alpha[j])
+#result<-predict(EV,train_test)
+  rmse_train[i]<-sqrt(mean((BART_train$yhat.test.mean-train_test$medv)^2))
+#rmse_train[i]<-sqrt(mean((result-train_test$medv)^2))
+  }
+  a[j,k]=(mean(rmse_train))
+}
+  }
+```
+         [,1]     [,2]     [,3]
+[1,] 3.051281 3.118191 3.082377
+[2,] 3.072732 2.976301 3.220865
+[3,] 3.034264 3.087594 3.102117
+[4,] 2.969479 3.109318 3.074321
+[5,] 2.925810 3.020387 2.988958
+
+```{r,eval=F,hide=T,echo=F}
+rmse<-matrix(nrow = length(base),ncol=length(power))
+for(k in 1:length(power)){
+for (j in 1:length(base)) {
+BART<-bart2(medv~.,data=train,test = test,power = power[k],base=base[j])
+  #EV<-evtree(medv~.,data=train_train,alpha=alpha[j])
+#result<-predict(EV,train_test)
+  rmse[j,k]<-sqrt(mean((BART$yhat.test.mean-test$medv)^2))
+  }}
+```
+> rmse
+
+
+> rmse
+         [,1]     [,2]     [,3]
+[1,] 3.494783 3.671592 3.670331
+[2,] 3.607465 3.705308 3.651482
+[3,] 3.466504 3.589084 3.574650
+[4,] 3.489010 3.670495 3.652560
+[5,] 3.369493 3.519774 3.550900
+
+```{r,eval=F,hide=T,echo=F}
+#evtree
+maxdepth=c(7,8,9,10,11)
+alpha=c(0.8,0.9,1,1.1,1.2)
+result=numeric(nrow(train_test))
+rmse_train=numeric(5)
+b=matrix(nrow=length(alpha),ncol=length(maxdepth))
+set.seed(10)
+for(k in 1:length(maxdepth)){
+for (j in 1:length(alpha)) {
+  for (i in 1:5) {
+  
+  train_test=train[seq(0,nrow(train),5),]
+  train_train=train[-seq(0,nrow(train),5),]
+  #BART_train<-bart2(medv~.,data=train_train,test = train_test,power = power[k],base=base[j])
+  EV<-evtree(medv~.,data=train_train,alpha=alpha[j],maxdepth=maxdepth[k])
+result<-predict(EV,train_test)
+  #rmse_train[i]<-sqrt(mean((BART_train$yhat.test.mean-train_test$medv)^2))
+rmse_train[i]<-sqrt(mean((result-train_test$medv)^2))
+  }
+  b[j,k]=(mean(rmse_train))
+}
+  }
+```
+         [,1]     [,2]     [,3]     [,4]     [,5]
+[1,] 4.094553 4.128094 3.573831 3.704097 4.006669
+[2,] 3.696499 3.692618 3.730924 3.692778 3.726685
+[3,] 4.065005 3.739498 3.239977 3.766429 3.954863
+[4,] 4.271980 3.847111 3.938041 4.427095 4.247045
+[5,] 4.025130 4.104339 3.890417 4.017046 3.863185
+
+```{r,eval=F,hide=T,echo=F}
+set.seed(10)
+result_ev<-nrow(test)
+rmse_ev=matrix(nrow=length(alpha),ncol=length(maxdepth))
+set.seed(10)
+for(k in 1:length(maxdepth)){
+for (j in 1:length(alpha)) {
+  #BART_train<-bart2(medv~.,data=train_train,test = train_test,power = power[k],base=base[j])
+  EV<-evtree(medv~.,data=train,alpha=alpha[j],maxdepth=maxdepth[k])
+result_ev<-predict(EV,test)
+  #rmse_train[i]<-sqrt(mean((BART_train$yhat.test.mean-train_test$medv)^2))
+rmse_ev[j,k]<-sqrt(mean((result_ev-test$medv)^2))
+
+}}
+
+```
+
+
+
+
+ rmse_ev
+         [,1]     [,2]     [,3]     [,4]     [,5]
+[1,] 5.016371 4.663213 4.843829 4.991951 5.286398
+[2,] 4.665355 4.737697 4.905407 5.198736 4.570050
+[3,] 4.612087 4.800177 4.638432 4.638593 4.776226
+[4,] 5.370843 5.077920 4.864117 4.741748 4.775624
+[5,] 5.252855 5.222601 4.625311 5.497078 4.790744
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
