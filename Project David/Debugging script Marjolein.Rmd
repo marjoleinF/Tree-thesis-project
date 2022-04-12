@@ -1,0 +1,321 @@
+---
+title: "Some investigation and debugging of multilevel BART-based BA trees"
+author: "Marjolein Fokkema"
+date: "11-4-2022"
+output: pdf_document
+---
+
+# Problem: None of the born-again GLMM trees make splits
+
+Possible causes: 
+
+1) Not enough signal in the data, so it is actually realistic and correct that there are no splits.
+
+2) Programming mistakes.
+
+3) We are not drawing from the posterior like we think we do.
+
+4) Inclusion of random effects messes up born-again approach. Perhaps we should first try an approach without random effects.
+
+5) Proposed born-again approach (with draws from BART posterior) does not work.
+
+
+
+# Example dataset
+
+We load the `safety` dataset, fit a standard GLMM tree and multilevel BART ensemble and evaluate predictive accuracy:  
+
+```{r}
+library("foreign")
+safety <- read.spss("Safety.sav", to.data.frame = TRUE)
+head(safety)
+dim(safety)
+#plot(safety)
+```
+
+Response, cluster id and predictor variables are:
+
+```{r}
+vars <- c("unsafe", "street", "age", "sex", "economic", "crowded")
+plot(safety[ , vars])
+table(safety$unsafe) ## enough variance present
+safety$unsafe <- as.numeric(safety$unsafe)
+table(complete.cases(safety[ , vars])) ## only complete cases, nice!
+```
+Select training and test sets:
+
+```{r}
+set.seed(420)
+train_ids <- sample.int(n = nrow(safety), size = floor(.75*nrow(safety)), 
+                        replace = F)
+safety_train <- safety[train_ids, ]
+safety_test  <- safety[-train_ids, ]
+var(safety$unsafe)
+var(safety_train$unsafe)
+var(safety_test$unsafe)
+```
+
+# Fit mixed-effects tree
+
+```{r, message = FALSE, warning = FALSE}
+library("glmertree")
+lmmt <- lmertree(unsafe ~ 1 | street | age + sex + economic + crowded,
+                  data = safety_train)
+length(lmmt$tree)
+plot(lmmt$tree, gp = gpar(cex = .5))
+VarCorr(lmmt)
+```
+
+The tree has quite some splits. The ICC is large enough for random effects to be of relevance.
+
+```{r}
+lmmt_preds <- predict(lmmt, newdata = safety_test)
+mean((lmmt_preds - safety_test$unsafe)^2) ## MSE
+```
+
+To check if there is actual signal of relevance in the data, we obtain predictions from the tree only (i.e., random effects assumed 0):
+
+```{r}
+lmmt_preds2 <- predict(lmmt, newdata = safety_test, re.form = ~0)
+mean((lmmt_preds2 - safety_test$unsafe)^2) ## MSE
+```
+The random effects are not that influential. There seems to be at least some signal captured by the tree. 
+
+# Fit multilevel BART ensemble
+
+
+```{r,  message = FALSE, warning = FALSE}
+library("dbarts")
+set.seed(420)
+mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+                  data = safety_train, group.by = safety_train$street,
+                  test = safety_test, group.by.test = safety_test$street,
+                  n.trees = 200, keepTrees = TRUE)
+#mbart$fit[[4]]$plotTree(199)
+head(mbart$fit[[4]]$getTrees(199)) ## fit is a list with 4 elements, correspond to chains?
+```
+
+It appears that tree 199 did not implement any splits. Do any trees have splits?
+
+```{r}
+splits <- matrix(NA, ncol = 4, nrow = 200)
+rownames(splits) <- paste0("tree", 1:200)
+colnames(splits) <- paste0("chain", 1:4)
+for (j in 1:4) {
+  for (i in 1:200) {
+    splits[i, j] <- sum(mbart$fit[[j]]$getTrees(i)$var)
+  }
+}
+table(splits)
+```
+No splits seem to be implemented whatsoever. Although I am not entirely sure that having `-1` for `var` means that no split was made. 
+
+
+## Obtaining posterior distributions
+
+```{r}
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ppd",
+                     group.by = safety_test$street, combineChains = TRUE)
+bart_preds_test  <- fitted(object = mbart, type = "ppd", sample = "test")
+mean((bart_preds_test - safety_test$unsafe)^2)
+```
+
+Multilevel BART seems to do better than the tree, so born-again approach may improve. 
+
+Q: Can we extract random effects covariance matrix from multilevel BART object?
+
+Whatever `fitted` does, works pretty well. But we do not know what `fitted` does, nor do we know what `predict` does. 
+
+We check what the different options look like for respondents with $y = 1, 2, 3$:
+
+```{r}
+par(mfrow = c(2, 2))
+## type = "ppd"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ppd",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 1L], main = "Person 1, ppd")
+abline(v = bart_preds_test[1], col = "red") ## red is for 'fitted' 
+abline(v = safety_test$unsafe[1], col = "blue") # blue is for observed
+
+## type = "bart"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "bart",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 1L], main = "Person 1, bart")
+abline(v = bart_preds_test[1], col = "red")
+abline(v = safety_test$unsafe[1], col = "blue")
+
+## type = "ev"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ev",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 1L], main = "Person 1; ev")
+abline(v = bart_preds_test[1], col = "red")
+abline(v = safety_test$unsafe[1], col = "blue")
+
+## type = "ranef"
+#PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ranef",
+#                     group.by = safety_test$street, combineChains = TRUE)
+## Yields a 3200x0 matrix, which is weird
+```
+
+
+```{r}
+par(mfrow = c(2, 2))
+## type = "ppd"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ppd",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 3L], main = "Person 3, ppd")
+abline(v = bart_preds_test[3], col = "red") ## red is for 'fitted' 
+abline(v = safety_test$unsafe[3], col = "blue") # blue is for observed
+
+## type = "bart"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "bart",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 3L], main = "Person 3, bart")
+abline(v = bart_preds_test[3], col = "red")
+abline(v = safety_test$unsafe[3], col = "blue")
+
+## type = "ev"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ev",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 3L], main = "Person 3; ev")
+abline(v = bart_preds_test[3], col = "red")
+abline(v = safety_test$unsafe[3], col = "blue")
+bart_preds_test[3]
+safety_test$unsafe[3]
+```
+
+```{r}
+par(mfrow = c(2, 2))
+## type = "ppd"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ppd",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 5L], main = "Person 5, ppd")
+abline(v = bart_preds_test[5], col = "red") ## red is for 'fitted' 
+abline(v = safety_test$unsafe[5], col = "blue") # blue is for observed
+
+## type = "bart"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "bart",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 5L], main = "Person 5, bart")
+abline(v = bart_preds_test[5], col = "red")
+abline(v = safety_test$unsafe[5], col = "blue")
+
+## type = "ev"
+PPD_mbart_test <- predict(mbart, newdata = safety_test, type = "ev",
+                     group.by = safety_test$street, combineChains = TRUE)
+mean((safety_test$unsafe - apply(PPD_mbart_test, 2, median))^2)
+hist(PPD_mbart_test[ , 5L], main = "Person 5; ev")
+abline(v = bart_preds_test[5], col = "red")
+abline(v = safety_test$unsafe[5], col = "blue")
+bart_preds_test[5]
+safety_test$unsafe[5]
+```
+
+According to the documentation of `rbart_vi`, this is the model:
+
+$y_i \sim N(f(x_i) + \alpha_{g_i}, \sigma^2)$
+
+$\alpha_j \sim N(0, \tau^2)$
+
+So, $y_i$ follows normal distribution with mean (`"ev"`) $f(x_i) + \alpha_{g_i}$ and variance $\sigma^2$. I thus suspect that `"ev"` returns samples from $f(k_i) + \alpha_{g_i}$, `"ppd"` returns samples from $f(k_i) + \alpha_{g_i}$ as well as samples from the residuals (which have variance $\sigma^2$). We don't know what `"bart"` returns, but it would make sense if it is $f(k_i)$; but counter intuitively this seems to be a constant in the current dataset
+
+PPD has a column for each observation, and a row (why 3200?) for each MCMC sampling iteration?
+
+I have no idea how predictions are generated from the posterior distribution. What I do know is that fitted does not return the median of the PPD returned by predict:
+
+```{r, fig.width=5, fig.height=2.5}
+par(mfrow = c(1, 2))
+cor(bart_preds_test, apply(PPD_mbart_test, 2, median))
+cor(bart_preds_test, apply(PPD_mbart_test, 2, mean))
+var(bart_preds_test)
+dim(PPD_mbart_test)
+dim(safety_test)
+
+PPD_mbart_test2 <- predict(mbart, newdata = safety_test, type = "ppd",
+                     group.by = safety_test$street, combineChains = FALSE)
+cor(bart_preds_test, apply(PPD_mbart_test2[1, 1:800, 1:250], 2, median))
+cor(bart_preds_test, apply(PPD_mbart_test2[1, 1:800, 1:250], 2, mean))
+
+PPD_mbart_test3 <- predict(mbart, newdata = safety_test, type = "bart",
+                     group.by = safety_test$street, combineChains = TRUE)
+cor(bart_preds_test, apply(PPD_mbart_test3, 2, median))
+cor(bart_preds_test, apply(PPD_mbart_test3, 2, mean))
+
+
+PPD_mbart_test4 <- predict(mbart, newdata = safety_test, type = "ev",
+                     group.by = safety_test$street, combineChains = TRUE)
+cor(bart_preds_test, apply(PPD_mbart_test4, 2, median))
+cor(bart_preds_test, apply(PPD_mbart_test4, 2, mean))
+``` 
+
+
+```{r}
+var(mbart$ranef.mean)
+var(lmmt$ranef$street)
+str(mbart$tau)
+```
+
+
+```{r}
+mbart$fitted
+```
+
+# TODO
+
+With the `safety` data, it appears we obtain an ensemble without any splits? We need a dataset which surely splits. The `MHserviceDemo` data from package `glmertree` is one to try.
+
+
+# Born again approach using constant prediction
+
+```{r}
+art_gen_dat <- safety_train
+bart_preds_train  <- fitted(object = mbart, type = "ppd", sample = "train")
+art_gen_dat$unsafe <-  bart_preds_train
+lmmt_ba <- lmertree(unsafe ~ 1 | street | age + sex + economic + crowded,
+                    data = art_gen_dat)
+length(lmmt_ba$tree)
+VarCorr(lmmt_ba)
+```
+
+The BA tree is much bigger than the original tree. The variance of the random effects has remained the same.
+
+We assess predictive accuracy and fidelity to black-box predictions:
+
+```{r}
+lmmt_ba_preds <- predict(lmmt_ba, newdata = safety_test)
+mean((lmmt_ba_preds - safety_test$unsafe)^2) ## Accuracy MSE
+mean((lmmt_ba_preds - bart_preds_test)^2) ## Fidelity MSE
+```
+
+Fidelity is very high (BA tree might simply mimic all splits from BART ensemble?), predictive accuracy has improved, though at price of increased complexity.
+
+
+# Born again approach using full PPD
+
+I have no idea how to get the (right) posterior distribution at the moment.
+
+```{r}
+PPD_mbart_train <- predict(mbart, newdata = safety_train, type = "ppd",
+                     group.by = safety_train$street, combineChains = TRUE)
+dim(PPD_mbart_train)
+## stack rows of PPD
+#as.vector(PPD_mbart_train)
+#art_gen_dat_large <- cbind(safety_train, )
+#bart_preds_train  <- fitted(object = mbart, type = "ppd", sample = "train")
+#art_gen_dat$unsafe <-  bart_preds_train
+#lmmt_ba <- lmertree(unsafe ~ 1 | street | age + sex + economic + crowded,
+#                    data = art_gen_dat)
+#length(lmmt_ba$tree)
+#VarCorr(lmmt_ba)
+#lmmt_ba_preds <- predict(lmmt_ba, newdata = safety_test)
+#mean((lmmt_ba_preds - safety_test$unsafe)^2) ## Accuracy MSE
+#mean((lmmt_ba_preds - bart_preds_test)^2) ## Fidelity MSE
+```
