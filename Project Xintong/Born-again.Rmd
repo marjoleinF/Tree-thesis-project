@@ -1,0 +1,89 @@
+---
+title: "BART"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Load data
+Born-again tree
+```{r}
+library(mlbench)
+library(rpart)
+data("BostonHousing")
+library(dbarts)
+BostonHousing$chas<-factor(BostonHousing$chas)
+n=1:nrow(BostonHousing)
+result_again<-matrix(nrow = 10,ncol =nrow(BostonHousing) )
+for (i in 1:10) {
+set.seed(i)
+index=sample(1:nrow(BostonHousing),replace = T)
+index_m=index
+for (j in 1:length(index)) {
+  set.seed(j)
+  index_m[j]=sample(c(index_m[j],j),1)
+}
+
+train=BostonHousing[index_m,]
+test_index=n[-unique(index_m)]
+test=BostonHousing[test_index,]
+BART<-bart2(medv~.,data=train,test = train)
+train$medv<-BART$yhat.test.mean
+model=rpart(medv~.,data = train)
+result_again[i,test_index]<-predict(model,test)
+}
+mse_born<-apply((t(result_again)-BostonHousing$medv)^2,2,mean,na.rm = T)
+
+
+```
+evtree
+```{r}
+
+library('evtree')
+
+n=1:nrow(BostonHousing)
+result_2<-matrix(nrow = 10,ncol =nrow(BostonHousing) )
+for (i in 1:10) {
+set.seed(i)
+index=sample(1:nrow(BostonHousing),replace = T)
+index_m=index
+for (j in 1:length(index)) {
+  set.seed(j)
+  index_m[j]=sample(c(index_m[j],j),1)
+}
+train=BostonHousing[index_m,]
+test_index=n[-unique(index_m)]
+test=BostonHousing[test_index,]
+EV<-evtree(medv~.,data=train)
+result_2[i,test_index]<-predict(EV,test)
+}
+mse_ev=apply((t(result)-BostonHousing$medv)^2,2,mean,na.rm = T)
+
+```
+combine them
+```{r}
+result_com<-matrix(nrow = 10,ncol =nrow(BostonHousing) )
+for (i in 1:10) {
+set.seed(i)
+index=sample(1:nrow(BostonHousing),replace = T)
+index_m=index
+for (j in 1:length(index)) {
+  set.seed(j)
+  index_m[j]=sample(c(index_m[j],j),1)
+}
+
+train=BostonHousing[index_m,]
+test_index=n[-unique(index_m)]
+test=BostonHousing[test_index,]
+BART<-bart2(medv~.,data=train,test = train)
+train$medv<-BART$yhat.test.mean
+model=evtree(medv~.,data = train)
+result_com[i,test_index]<-predict(model,test)
+}
+mse_com<-apply((t(result_com)-BostonHousing$medv)^2,2,mean,na.rm = T)
+```
+
+
+
+

@@ -1,0 +1,52 @@
+---
+title: "BART"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+load data and Bootsrap of BART
+```{r,echo=FALSE}
+library(mlbench)
+library(ggplot2)
+library(dbarts)
+data("BostonHousing")
+BostonHousing$chas<-factor(BostonHousing$chas)
+#index=sample(1:nrow(BostonHousing),floor(0.7*nrow(BostonHousing)))
+n=1:nrow(BostonHousing)
+result<-matrix(nrow = 10,ncol =nrow(BostonHousing) )
+for (i in 1:10) {
+  set.seed(i)
+  index=sample(1:nrow(BostonHousing),replace = T)
+train=BostonHousing[index,]
+test_index=n[-unique(index)]
+test=BostonHousing[test_index,]
+BART<-bart2(medv~.,data=train,test = test)
+result[i,test_index]<-BART$yhat.test.mean
+}
+
+```
+Bootsrap of Evtree
+
+```{r,echo=FALSE}
+library('evtree')
+
+n=1:nrow(BostonHousing)
+result_2<-matrix(nrow = 10,ncol =nrow(BostonHousing) )
+for (i in 1:10) {
+  set.seed(i)
+  index=sample(1:nrow(BostonHousing),replace = T)
+train=BostonHousing[index,]
+test_index=n[-unique(index)]
+test=BostonHousing[test_index,]
+EV<-evtree(medv~.,data=train)
+result_2[i,test_index]<-predict(EV,test)
+}
+```
+Compute MSE
+
+```{r,echo=FALSE}
+mse=apply((t(result)-BostonHousing$medv)^2,2,mean,na.rm = T)
+mse_2=apply((t(result_2)-BostonHousing$medv)^2,2,mean,na.rm = T)
+rbind(mse,mse_2)
