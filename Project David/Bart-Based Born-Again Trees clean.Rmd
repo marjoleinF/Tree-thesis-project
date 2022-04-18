@@ -1,0 +1,132 @@
+---
+title: "Bart-Based Born-Again Trees"
+author: "David Eleveld s1741225"
+date: "18-4-2022"
+output: pdf_document
+---
+
+Load requiered packages
+
+```{r Packages}
+library("haven")
+library("dbarts")
+library("glmertree")
+library("dplyr")
+library("here")
+library("multilevel")
+# library("mice")
+```
+
+Load the Bayesian data generation function
+
+```{r Bayesian Data generation}
+gendata_bay <- function(data, PPD, n_gen){
+  
+  if(nrow(data) != ncol(PPD)){stop("Amount of observations in PPD is different from data")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  x_gen <- data[index_gen,]
+  y_gen <- sapply(index_gen, function(i) sample(x = PPD[,i], size = 1))
+  # y_gen <- sapply(index_gen, function(i) sample(x = PPD[,i][PPD[,i] >= quantile(PPD[,i], probs = .40) & PPD[,i] <= quantile(PPD[,i], probs = .60)], size = 1))
+  
+  return(cbind(x_gen, y_gen))
+}
+```
+
+Load the Smearing data generation function
+
+```{r Smearing}
+gendata_smr <- function(data, palt = 0.5, n_gen){
+
+  if(palt < 0 | palt > 1){stop("palt must be bound between between 0 and 1")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  gen_data <- data[index_gen,]
+  
+  if(palt != 0){
+    for(i in 1:nrow(gen_data)){
+      
+      for(j in 1:ncol(gen_data)){
+        
+        if(runif(1) <= palt){gen_data[i,j] <- sample(x = data[,j], size = 1)}
+      }
+    }
+  }
+  return(gen_data)
+}
+```
+
+Load Safety data
+
+```{r Load Safety data}
+data = read_sav(file.path(here(), "Safety.sav"))
+
+data <- read_sav("D:/Users/david/Documents/GitHub/Tree-thesis-project/Safety.sav")
+
+getwd()
+
+set.seed(42)
+sample <- sample.int(n = nrow(safety), size = floor(.75*nrow(safety)), replace = F)
+traindat <- data[sample, ]
+testdat  <- data[-sample, ]
+```
+
+Single GLMM tree
+
+```{r GLMM tree}
+###################################################################
+# GLMM tree
+glmtree <- lmertree(unsafe ~ 1 | (1|street) | age + sex + economic + crowded,
+                       data = traindat)
+
+pred_glmtree <- predict(glmtree, newdata = testdat)
+MSE_glmtree <- mean((pred_glmtree - testdat$unsafe)^2)
+
+plot(glmtree_saf$tree)
+```
+
+Multilevel bart model
+
+```{r Multilevel Bart}
+set.seed(42)
+Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+         data = traindat, group.by = traindat$street,
+         test = testdat, group.by.test = testdat$street,
+         n.trees = 100, keepTrees = TRUE)
+
+# This does not work to give the PPD
+PPD_mlbart <- predict(Mbart, newdata = testdat, type = "ppd",
+                  group.by = testdat$street, combineChains = TRUE)
+
+# Predicted Values
+pred_mlbart <- fitted(object = Mbart, type = "ppd", sample = "test")
+
+MSE_mlbart <- mean((pred_mlbart - testdat$unsafe)^2)
+```
+
+Born-again lmertree (Multilevel BART)
+
+```{r Born-again lmertree}
+PPD_mlbart_train <- predict(Mbart, newdata = traindat, type = "ppd",
+                      group.by = traindat$street, combineChains = TRUE)
+
+surr_mlbart <- gendata_bay(traindat, PPD_mlbart_train, 2 * ncol(traindat))
+
+babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                       data = surr_mlbart)
+
+pred_babart <- predict(babart, newdata = testdat)
+
+MSE_ba <- mean((pred_babart - testdat$unsafe)^2)
+```
+
+
+Test the model accuracies
+
+```{r Test model accuracy}
+var(testdat$unsafe)
+MSE_mlbart
+MSE_glmtree
+MSE_ba
+```
+
