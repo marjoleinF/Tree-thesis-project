@@ -89,7 +89,7 @@ set.seed(42)
 Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
          data = traindat, group.by = traindat$street,
          test = testdat, group.by.test = testdat$street,
-         n.trees = 100, keepTrees = TRUE)
+         n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
 
 # This does not work to give the PPD
 PPD_mlbart <- predict(Mbart, newdata = testdat, type = "ppd",
@@ -108,7 +108,7 @@ set.seed(42)
 PPD_mlbart_train <- predict(Mbart, newdata = traindat, type = "ppd",
                       group.by = traindat$street, combineChains = TRUE)
 
-surr_mlbart <- gendata_bay(traindat, PPD_mlbart_train, 2 * nrow(traindat))
+surr_mlbart <- gendata_bay(traindat, Mbart$yhat.train, 10 * nrow(traindat))
 
 babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
                        data = surr_mlbart)
