@@ -20,19 +20,6 @@ gendata_bay <- function(data, PPD, n_gen){
   return(cbind(x_gen, y_gen))
 }
 
-
-
-data <- runif(100, 0, 500)
-
-
-
-sapply(index_gen, function(i) sample(x = PPD[,i], size = 1))
-
-PPD[,i][PPD[,i] >= quantile(PPD[,i], probs = .25) & PPD[,i] <= quantile(PPD[,i], probs = .75)]
-
-summary(data[data >= quantile(data, probs = .25) & data <= quantile(data, probs = .75)])
-summary(data)
-
 ###################################################################
 # Load safety data and split
 safety = read_sav(file.path(here(), "Safety.sav"))

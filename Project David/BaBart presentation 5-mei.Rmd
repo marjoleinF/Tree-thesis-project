@@ -1,0 +1,142 @@
+---
+title: "BaBart presentation 5-mei"
+author: "David Eleveld s1741225"
+date: "3-5-2022"
+output: pdf_document
+---
+
+#Presentatie 5-mei 2022
+
+Met een kleine verandering heb ik volgens mij eindelijk de correcte posterior distribution weten te vinden. In het bart-element staat namelijk een `...$yhat.train`. Deze heeft de correcte dimensies en de zelfde gemiddeldes als `...$yhat.train.mean`. 
+
+Sidenote: je moet BINNEN de bart functie een seed setten met `seed = ...`. Als je dit niet doet, maar wel een seed set voor de bart functie werkt het niet.
+
+#Setup
+
+##Load requiered packages
+
+```{r Packages, include=FALSE}
+library("haven")
+library("dbarts")
+library("glmertree")
+library("dplyr")
+library("here")
+library("multilevel")
+# library("mice")
+```
+
+##Bayesian data generation function
+
+```{r Bayesian Data generation}
+gendata_bay <- function(data, PPD, n_gen){
+  
+  if(nrow(data) != ncol(PPD)){stop("Amount of observations in PPD is different from data")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  x_gen <- data[index_gen,]
+  y_gen <- sapply(index_gen, function(i) sample(x = PPD[,i], size = 1))
+  # y_gen <- sapply(index_gen, function(i) sample(x = PPD[,i][PPD[,i] >= quantile(PPD[,i], probs = .40) & PPD[,i] <= quantile(PPD[,i], probs = .60)], size = 1))
+  
+  return(cbind(x_gen, y_gen))
+}
+```
+
+##Smearing data generation function
+
+```{r Smearing}
+gendata_smr <- function(data, palt = 0.5, n_gen){
+
+  if(palt < 0 | palt > 1){stop("palt must be bound between between 0 and 1")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  gen_data <- data[index_gen,]
+  
+  if(palt != 0){
+    for(i in 1:nrow(gen_data)){
+      
+      for(j in 1:ncol(gen_data)){
+        
+        if(runif(1) <= palt){gen_data[i,j] <- sample(x = data[,j], size = 1)}
+      }
+    }
+  }
+  return(gen_data)
+}
+```
+
+##Load Safety data
+
+```{r Load Safety data}
+set.seed(42)
+data = read_sav(file.path(here(),"Project David","Safety.sav"))
+```
+
+#Fit models
+
+In een mooie reps * k-fold loop halen we de MSE op. Het duurt helaas wel echt mega lang. Ik probeerde hem met 10 reps te runnen en met `ngensizes = 1:10`, maar toen kwam er een crash met de boodschap: `Error in integer() : invalid 'length' argument`. De dataframe zat verder wel half vol voordat hij stopte. Misschien een memory ding?
+
+Vraagje: Ik heb het volgende stukje code van je gestolen: `fold_ids <- sample(rep(1:10, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = TRUE)`
+
+Ik heb daar dit van gemaakt: `fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)`
+
+`Replace = FALSE` lijkt me logischer omdat alle folds dan even groot zijn. Of hoeft dat niet? Als `Replace = TRUE` kan je net zo goed uit `1:10` sampelen
+
+##Single GLMM tree
+
+```{r}
+set.seed(42)
+nfolds <- 10
+nreps <- 3
+ngensizes <- 1:3
+
+tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
+
+colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
+rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
+
+for (k in 1:nreps){
+  
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
+  
+    for (i in 1:nfolds){
+      
+      traindat <- data[fold_ids != i, ]
+      testdat <- data[fold_ids == i, ]
+      
+      # Fit a regualar GLMM tree
+      glmtree <- lmertree(unsafe ~ 1 | (1|street) | age + sex + economic + crowded,
+                       data = traindat)
+
+      pred_glmtree <- predict(glmtree, newdata = testdat)
+      
+      MSE[(k-1)*10+i,1] <- mean((testdat$unsafe - pred_glmtree)^2)
+      tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+      
+      # fit multilevel BART
+      Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+         data = traindat, group.by = traindat$street,
+         test = testdat, group.by.test = testdat$street,
+         n.trees = 100, keepTrees = TRUE, combineChains = TRUE)
+      
+      MSE[(k-1)*10+i,2] <- mean((testdat$unsafe - Mbart$yhat.test.mean)^2)
+      
+      # fit BaBart GLMM trees with different sizes of Ngen
+      for(ngen in ngensizes){
+        
+        surr_mlbart <- gendata_bay(traindat, Mbart$yhat.train, ngen * nrow(traindat))
+  
+        babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                         data = surr_mlbart)
+  
+        pred_babart <- predict(babart, newdata = testdat)
+  
+        MSE[(k-1)*10+i,2+ngen] <- mean((testdat$unsafe - pred_babart)^2)
+        tree_size[(k-1)*10+i,2+ngen] <- (length(babart$tree)-1)/2
+        
+      }
+    }
+}
+
+```
+
+
