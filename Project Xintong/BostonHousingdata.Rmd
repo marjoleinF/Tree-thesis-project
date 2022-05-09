@@ -1,0 +1,133 @@
+---
+title: "BostonHousing data"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Application of the methods "Evolutionary Trees" and "Exact Tree" to the Boston Housing data.
+Xintong: you can also add rpart and BART to this code (first without born again). 
+```{r}
+library(mlbench)
+library(rpart)
+#remove.packages("ExactTree")
+library(ExactTree) #first install package ExactTree 0.2.3
+library(evtree)
+data("BostonHousing")
+head(BostonHousing)
+library(dbarts)
+BostonHousing$chas<-factor(BostonHousing$chas) 
+summary(BostonHousing)
+n <- 1:nrow(BostonHousing)
+k <- 10 #number of replications (first start with a low number)
+
+result_mat_evtree <- matrix(nrow = k,ncol =nrow(BostonHousing) )
+result_mat_exact <- matrix(nrow = k,ncol =nrow(BostonHousing) )
+result_mat_rpart<-matrix(nrow = k,ncol =nrow(BostonHousing) )
+result_mat_bart<-matrix(nrow = k,ncol =nrow(BostonHousing) )
+result_mat_born<-matrix(nrow = k,ncol =nrow(BostonHousing) )
+#first run once to test the code:
+  i <- 1
+  set.seed(i * 1000) # I agree to set the seed for each replication k, in this way it    is easy to reproduce your findings.
+  index <- sample(n, replace = TRUE)
+  train <- BostonHousing[index,]
+  test_index <- n[-unique(index)]
+  test <- BostonHousing[test_index,]
+  #apply evtree: use hyperparameters that are comparable to the other methods
+  maxd <- 3 #maxdepth of the tree is 3
+  control_evtree <- evtree.control(maxdepth = maxd,minbucket = 10, minsplit = 20,  alpha=0.0001) 
+  model_evtree<- evtree(medv~., data=train, control=control_evtree)
+  result_mat_evtree[i,test_index] <- predict(model_evtree,test)
+  #apply Exact Tree:
+  #first you need to discretize the continous predictor variables in the data set (not the     categorical predictors and also not the outcome)
+  selVars <- SelectVar(formula = medv~.,
+                   data = train, discretize = c(9,9,9,0,9,9,9,9,9,9,9,9,9))
+  #use measure = 0 because our outcome is numeric
+  control1 <- ETree.control(measure = 0, maxsize = NULL, maxdepth = maxd, minbucket = 10,     ncv=0, minheterogeneity = 0.0001) #use similar hyperparameters for both methods
+  model_ETree <- ETree(selV=selVars, control=control1)
+  plot(model_ETree)
+  result_mat_exact[i,test_index] <- predict(model_ETree, newdata= test)
+#rpart
+  model_rpart<-rpart(medv~., data=train)
+  result_mat_rpart[i,test_index] <- predict(model_rpart, newdata= test)
+#BART
+  result_mat_bart[i,test_index]<-bart2(medv~.,data=train,test = test)$yhat.test.mean
+  #born again
+  s_train<-train
+  for (j in nrow(train)) {
+    s_train[j,]<-smearing(train)
+  }
+
+  s_train$medv<-bart2(medv~.,data=train,test = s_train)$yhat.test.mean 
+
+  model_rpart_born<-rpart(medv~., data=s_train)
+  result_mat_born[i,test_index] <-predict(model_rpart_born, newdata= test)
+```
+
+
+```{r}
+#when the code above runs you can start replicating:
+for (i in 2:k) {
+    set.seed(i * 1000) # I agree to set the seed for each replication k, in this way it    is easy to reproduce your findings.
+  index <- sample(n, replace = TRUE)
+  train <- BostonHousing[index,]
+  test_index <- n[-unique(index)]
+  test <- BostonHousing[test_index,]
+  #apply evtree: use hyperparameters that are comparable to the other methods
+  maxd <- 3 #maxdepth of the tree is 3
+  control_evtree <- evtree.control(maxdepth = maxd,minbucket = 10, minsplit = 20,  alpha=0.0001) 
+  model_evtree<- evtree(medv~., data=train, control=control_evtree)
+  result_mat_evtree[i,test_index] <- predict(model_evtree,test)
+  #apply Exact Tree:
+  selVars <- SelectVar(formula = medv~.,
+                   data = train, discretize = c(9,9,9,0,9,9,9,9,9,9,9,9,9))
+  #use measure = 0 because our outcome is numeric
+  control1 <- ETree.control(measure = 0, maxsize = NULL, maxdepth = maxd, minbucket = 10,     ncv=0, minheterogeneity = 0.0001) #use similar hyperparameters for both methods
+  model_ETree <- ETree(selV=selVars, control=control1)
+  plot(model_ETree)
+  result_mat_exact[i,test_index] <- predict(model_ETree, newdata= test)
+  ##also add rpart and bart here (without born again)
+ #rpart
+
+  model_rpart<-rpart(medv~., data=train)
+  result_mat_rpart[i,test_index] <- predict(model_rpart, newdata= test)
+  #bart
+  #BART
+  result_mat_bart[i,test_index]<-bart2(medv~.,data=train,test = test)$yhat.test.mean
+  #born again
+    #born again
+  s_train<-train
+  for (j in nrow(train)) {
+    s_train[j,]<-smearing(train)
+  }
+
+  s_train$medv<-bart2(medv~.,data=train,test = s_train)$yhat.test.mean 
+
+  model_rpart_born<-rpart(medv~., data=s_train)
+  result_mat_born[i,test_index] <-predict(model_rpart_born, newdata= test)
+  }
+ #Compute mse (not yet tested whether this works)
+  mse_exact<-apply((t(result_mat_exact)-BostonHousing$medv)^2,2,mean,na.rm = T)
+  mse_evtree<-apply((t(result_mat_evtree)-BostonHousing$medv)^2,2,mean,na.rm = T)
+  mse_rpart<-apply((t(result_mat_rpart)-BostonHousing$medv)^2,2,mean,na.rm = T)
+  mse_bart<-apply((t(result_mat_bart)-BostonHousing$medv)^2,2,mean,na.rm = T)
+  mse_born<-apply((t(result_mat_born)-BostonHousing$medv)^2,2,mean,na.rm = T)
+
+```
+
+```{r}
+smearing<-function(data)
+{ 
+  m<-sample(1:nrow(data),1)
+  Xm<-data[m,]
+  index<-sample(1:nrow(data),(ncol(data)-1),replace = T)
+  for (j in 1:(ncol(data)-1)) {
+    index[j]<-sample(c(index[j],m),1)
+    Xm[j]<-data[index[j],j]
+  }
+return(Xm)
+}
+```
+
