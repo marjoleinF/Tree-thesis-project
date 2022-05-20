@@ -22,6 +22,7 @@ library("glmertree")
 library("dplyr")
 library("here")
 library("multilevel")
+library("doParallel")
 # library("mice")
 ```
 
@@ -86,57 +87,112 @@ Ik heb daar dit van gemaakt: `fold_ids <- sample(rep(1:nfolds, times = ceiling(n
 ```{r}
 set.seed(42)
 nfolds <- 10
-nreps <- 3
-ngensizes <- 1:3
+nreps <- 10
+ngensizes <- c(1:10)
+tel <- 0
 
 tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
 
 colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
 rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
 
+
+cl <- makeCluster(detectCores()-1)
+registerDoParallel(cl)
+
+
+system.time(
+# foreach(k = 1:nreps, .packages = (c("dbarts","glmertree"))) %dopar% {
 for (k in 1:nreps){
   
   fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
   
-    for (i in 1:nfolds){
-      
-      traindat <- data[fold_ids != i, ]
-      testdat <- data[fold_ids == i, ]
-      
-      # Fit a regualar GLMM tree
-      glmtree <- lmertree(unsafe ~ 1 | (1|street) | age + sex + economic + crowded,
-                       data = traindat)
+  for (i in 1:nfolds){
+    
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    # Fit a regualar GLMM tree
+    glmtree <- lmertree(unsafe ~ 1 | (1|street) | age + sex + economic + crowded,
+                     data = traindat)
 
-      pred_glmtree <- predict(glmtree, newdata = testdat)
+    pred_glmtree <- predict(glmtree, newdata = testdat)
+
+    MSE[(k-1)*10+i,1] <- mean((testdat$unsafe - pred_glmtree)^2)
+    tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+    
+    # fit multilevel BART
+    Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+       data = traindat, group.by = traindat$street,
+       test = testdat, group.by.test = testdat$street,
+       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+    
+    posterior <- Mbart$yhat.train
+    
+    MSE[(k-1)*10+i,2] <- mean((testdat$unsafe - Mbart$yhat.test.mean)^2)
+    
+    # fit BaBart GLMM trees with different sizes of Ngen using parralel processing
+    babart_MSE_treesize <- foreach(ngen = ngensizes, .packages = "glmertree") %do% {
+
+      surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
       
-      MSE[(k-1)*10+i,1] <- mean((testdat$unsafe - pred_glmtree)^2)
-      tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+      .GlobalEnv$ngen <- ngen # some weird parralel processing stuff
+      .GlobalEnv$surr_mlbart <- surr_mlbart # some weird parralel processing stuff
       
-      # fit multilevel BART
-      Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
-         data = traindat, group.by = traindat$street,
-         test = testdat, group.by.test = testdat$street,
-         n.trees = 100, keepTrees = TRUE, combineChains = TRUE)
+      babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                       data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
+
+      pred_babart <- predict(babart, newdata = testdat)
       
-      MSE[(k-1)*10+i,2] <- mean((testdat$unsafe - Mbart$yhat.test.mean)^2)
-      
-      # fit BaBart GLMM trees with different sizes of Ngen
-      for(ngen in ngensizes){
-        
-        surr_mlbart <- gendata_bay(traindat, Mbart$yhat.train, ngen * nrow(traindat))
-  
-        babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
-                         data = surr_mlbart)
-  
-        pred_babart <- predict(babart, newdata = testdat)
-  
-        MSE[(k-1)*10+i,2+ngen] <- mean((testdat$unsafe - pred_babart)^2)
-        tree_size[(k-1)*10+i,2+ngen] <- (length(babart$tree)-1)/2
-        
-      }
+      c(mean((testdat$unsafe - pred_babart)^2),
+           (length(babart$tree)-1)/2)
     }
+    # stores the values in the list
+    for(ngen in ngensizes){
+      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][1]
+      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][2]
+    }
+    
+    tel <- tel + 1
+    print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+  }
 }
+)
 
+
+
+stopCluster(cl)
+
+apply(X = MSE, MARGIN = 2, FUN = mean)
+apply(X = MSE, MARGIN = 2, FUN = sd)
+apply(X = tree_size, MARGIN = 2, FUN = mean)
+apply(X = tree_size, MARGIN = 2, FUN = sd)
+
+library(tidyverse)
+MSE_long <- MSE %>% gather(key = "Method", value = "MSE")
+MSE_long$Method <- as.factor(MSE_long$Method)
+boxplot(MSE_long)
+par(mar = c(7.1, 4.1, 4.1, 2.1))
+boxplot(MSE, horizontal = F, las = 2)
+abline(h = median(MSE$Bart))
+
+```
+
+traceback()
+
+
+```{r}
+# MSE_weighted <- MSE
+# tree_size_weighted <- tree_size
+# 
+# saveRDS(MSE_weighted, file = "MSE_weighted.Rda")
+# saveRDS(tree_size_weighted, file = "tree_size_weighted.Rda")
+
+MSE_weighted_par_1to10 <- MSE
+tree_size_weighted_par_1to10 <- tree_size
+
+saveRDS(MSE_weighted_par_1to10, file = "MSE_weighted_par_1to10")
+saveRDS(tree_size_weighted_par_1to10, file = "tree_size_weighted_par_1to10")
 ```
 
 
