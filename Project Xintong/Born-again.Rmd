@@ -18,6 +18,7 @@ n=1:nrow(BostonHousing)
 result_again<-matrix(nrow = 10,ncol =nrow(BostonHousing) )
 for (i in 1:10) {
 set.seed(i)
+#Smearing
 index=sample(1:nrow(BostonHousing),replace = T)
 index_m=index
 for (j in 1:length(index)) {
@@ -58,7 +59,7 @@ test=BostonHousing[test_index,]
 EV<-evtree(medv~.,data=train)
 result_2[i,test_index]<-predict(EV,test)
 }
-mse_ev=apply((t(result)-BostonHousing$medv)^2,2,mean,na.rm = T)
+mse_ev=apply((t(result_2)-BostonHousing$medv)^2,2,mean,na.rm = T)
 
 ```
 combine them
