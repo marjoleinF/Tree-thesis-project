@@ -1,0 +1,271 @@
+---
+title: "BostonHousing data"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Application of the methods "Evolutionary Trees" and "Exact Tree" to the Boston Housing data.
+Xintong: you can also add rpart and BART to this code (first without born again). 
+```{r}
+library(mlbench)
+library(rpart)
+#remove.packages("ExactTree")
+library(ExactTree) #first install package ExactTree 0.2.3
+library(evtree)
+data("BostonHousing")
+dataset=BostonHousing
+#dataset=mlbench.friedman1(500)
+#dataset=as.data.frame(cbind(dataset[['x']],dataset[['y']]))
+
+
+head(BostonHousing)
+library(dbarts)
+source('smearing.r')
+BostonHousing$chas<-factor(BostonHousing$chas) 
+
+n <- 1:nrow(dataset)
+k <- 10 #number of replications (first start with a low number)
+
+result_mat_evtree <- matrix(nrow = k,ncol =nrow(dataset) )
+result_mat_exact <- matrix(nrow = k,ncol =nrow(dataset) )
+result_mat_rpart<-matrix(nrow = k,ncol =nrow(dataset) )
+result_mat_bart<-matrix(nrow = k,ncol =nrow(dataset) )
+result_mat_born<-matrix(nrow = k,ncol =nrow(dataset) )
+
+
+```
+
+
+```{r}
+#when the code above runs you can start replicating:
+for (i in 1:k) {
+    set.seed(i * 1000) # I agree to set the seed for each replication k, in this way it    is easy to reproduce your findings.
+  index <- sample(n, replace = TRUE)
+  train <- dataset[index,]
+  test_index <- n[-unique(index)]
+  test <- dataset[test_index,]
+  #apply evtree: use hyperparameters that are comparable to the other methods
+  maxd <- 3 #maxdepth of the tree is 3
+  control_evtree <- evtree.control(maxdepth = maxd,minbucket = 10, minsplit = 20,  alpha=0.0001) 
+  model_evtree<- evtree(as.formula(paste0(names(dataset)[length(names(dataset))],'~.')), data=train, control=control_evtree)
+  result_mat_evtree[i,test_index] <- predict(model_evtree,test)
+  #apply Exact Tree:
+
+
+  ##also add rpart and bart here (without born again)
+ #rpart
+  control2<-rpart.control(minsplit = 30,maxdepth=maxd)
+  model_rpart<-rpart(as.formula(paste0(names(dataset)[length(names(dataset))],'~.')), data=train,control = control2)
+  result_mat_rpart[i,test_index] <- predict(model_rpart, newdata= test)
+  #bart
+  #BART
+  result_mat_bart[i,test_index]<-bart2(as.formula(paste0(names(dataset)[length(names(dataset))],'~.')),data=train,test = test)$yhat.test.mean
+  #born again
+
+  s_train<-train
+  
+  for (j in 1:nrow(train)) {
+    s_train[j,]<-smearing(train)
+  }
+    for (j in 1:(4*nrow(train))) {
+    s_train<-rbind(s_train,smearing(train))
+  }
+  s_train[,ncol(s_train)]<-bart2(as.formula(paste0(names(dataset)[length(names(dataset))],'~.')),data=train,test = s_train)$yhat.test.mean 
+
+  model_rpart_born<-rpart(as.formula(paste0(names(dataset)[length(names(dataset))],'~.')), data=s_train)
+  model_rpart_born=prune(model_rpart_born,cp= model_rpart_born$cptable[which.min(model_rpart_born$cptable[,"xerror"]),"CP"])
+  result_mat_born[i,test_index] <-predict(model_rpart_born, newdata= test)
+  }
+ #Compute mse (not yet tested whether this works)
+  mse_exact<-apply((t(result_mat_exact)-dataset[,ncol(dataset)])^2,2,mean,na.rm = T)
+  mse_evtree<-apply((t(result_mat_evtree)-dataset[,ncol(dataset)])^2,2,mean,na.rm = T)
+  mse_rpart<-apply((t(result_mat_rpart)-dataset[,ncol(dataset)])^2,2,mean,na.rm = T)
+  mse_bart<-apply((t(result_mat_bart)-dataset[,ncol(dataset)])^2,2,mean,na.rm = T)
+  mse_born<-apply((t(result_mat_born)-dataset[,ncol(dataset)])^2,2,mean,na.rm = T)
+
+```
+
+```{r}
+smearing<-function(data)
+{ 
+  m<-sample(1:nrow(data),1)
+  Xm<-data[m,]
+  index<-sample(1:nrow(data),(ncol(data)-1),replace = T)
+  for (j in 1:(ncol(data)-1)) {
+    index[j]<-sample(c(index[j],m),1)
+    Xm[j]<-data[index[j],j]
+  }
+return(Xm)
+}
+```
+
+```{r}
+smearing_2<-function(data,name)
+{ 
+  number<-which(names(data)==name)
+  m<-sample(1:nrow(data),1)
+  Xm<-data[m,]
+  index<-sample(1:nrow(data),(ncol(data)-1),replace = T)
+  for (j in 1:(ncol(data)-1)) {
+    if(j==number){next}
+    index[j]<-sample(c(index[j],m),1)
+    Xm[j]<-data[index[j],j]
+  }
+return(Xm)
+}
+```
+
+
+
+```{r}
+save.image("myfile2")
+```
+
+```{r}
+#first node
+maxd=5
+id=1
+assign(paste0('data_',id),train)
+assign(paste0('train_',id),train)
+data=train
+for (i in 1:nrow(train)) {
+  data[i,]=smearing(train)
+}
+assign((paste0('data_',id)),data)
+assign(paste0('data_',id,'$medv'),bart2(medv~.,data=train,test = get(paste0('data_',id)))$yhat.test.mean) 
+node_1<-rpart(medv~., data=get(paste0('data_',id)),maxdepth=1)
+split_1<-rpart_splits(node_1)
+#model_list<-list('model')
+todo_list<-numeric(0)
+todo_list<-append(todo_list,id)
+now_depth=1
+nodelist=list()
+split=get(paste0('split_',id))
+nodelist[[id]]<-list(id=id,split=partysplit(varid =which(names(train)==split$var[1]) ,breaks=(as.numeric(strsplit(get(paste0('split_',1))$left[1],' ')[[1]][2]))),kids=(2*id):(2*id+1))
+while(length(todo_list)>=1){
+  now_depth=floor(log(todo_list[1],2))+2
+  now_split<-get(paste0('split_',todo_list[1]))
+  id=2*todo_list[1]
+  if(now_depth>maxd-1){
+    break
+  }
+  assign(paste0('data_',id),train)
+  #assign(paste0('train_',id),train[train[,now_split$var[1]]<as.numeric(strsplit(now_split$left[1],' ')[[1]][2]),])
+  i=0
+  while (i < nrow(train)) {
+    
+    #smearing
+    #data
+    numbers=numeric(0)
+    for (n in 1:(now_depth-1)) {
+      numbers=append(numbers,2^(n-1))
+    }
+    node_s=floor(todo_list[1]/numbers)
+    line<-smearing(train)
+    a=numeric(0)
+    for (x in 1:length(node_s)) {
+      a=append(a,line[,(get(paste0('split_',node_s[x]))$var)[1]]<as.numeric(strsplit(get(paste0('split_',node_s[x]))$left[1],' ')[[1]][2]))
+    }
+    if(sum(a)==length(a)){
+      data[i,]<-line
+
+      i=i+1
+}
+  }
+  
+  data$medv<-bart2(medv~.,data=train,test = get(paste0('data_',id)))$yhat.test.mean
+  assign(paste0('data_',id),data)
+  assign(paste0('node_',id),rpart(medv~., data=get(paste0('data_',id)),maxdepth=1))
+  if(get(paste0('node_',id))$frame$var[1]!='<leaf>'){
+  assign(paste0('split_',id),rpart_splits(get(paste0('node_',id))))
+  todo_list<-append(todo_list,id)
+  split=get(paste0('split_',id))
+nodelist[[id]]<-list(id=id,split=partysplit(varid =which(names(train)==split$var[1]) ,breaks=(as.numeric(strsplit(get(paste0('split_',id))$left[1],' ')[[1]][2]))),kids=(2*id):(2*id+1))
+  }
+  else
+  {nodelist[[id]]<-list(id=id)}
+  id=id+1
+  assign(paste0('data_',id),train)
+  #assign(paste0('train_',id),train[train[,now_split$var[1]]<as.numeric(strsplit(now_split$left[1],' ')[[1]][2]),])
+  i=0
+  while (i < nrow(train)) {
+
+    line<-smearing(train)
+    a=numeric(0)
+    for (x in 1:length(node_s)) {
+      a=append(a,line[,(get(paste0('split_',node_s[x]))$var)[1]]>=as.numeric(strsplit(get(paste0('split_',node_s[x]))$left[1],' ')[[1]][2]))
+    }
+    if(sum(a)==length(a)){
+      data[i,]<-line
+
+      i=i+1
+}
+  }
+  
+  data$medv<-bart2(medv~.,data=train,test = get(paste0('data_',id)))$yhat.test.mean
+  assign(paste0('data_',id),data)
+  assign(paste0('node_',id),rpart(medv~., data=get(paste0('data_',id)),maxdepth=1))
+    if(get(paste0('node_',id))$frame$var[1]!='<leaf>'){
+  assign(paste0('split_',id),rpart_splits(get(paste0('node_',id))))
+  todo_list<-append(todo_list,id)
+  split=get(paste0('split_',id))
+nodelist[[id]]<-list(id=id,split=partysplit(varid =which(names(train)==split$var[1]) ,breaks=(as.numeric(strsplit(get(paste0('split_',id))$left[1],' ')[[1]][2]))),kids=(2*id):(2*id+1))
+    }
+    else
+  {nodelist[[id]]<-list(id=id)}
+
+  todo_list<-todo_list[-1]
+print(id)
+}
+for (i in 2:(2^(maxd-1)-1) ){
+  if(is.null(nodelist[[i]])){
+    nodelist[[i]]<-list(id=i)
+  }
+}
+for (i in 2^(maxd-1):((2^maxd)-1) ){
+  nodelist[[i]]<-list(id=i)
+}
+#nodelist[[5]]$info<-128
+node <- as.partynode(nodelist)
+var1 <-as.factor(fitted_node(node,data=train))
+
+```
+```{r}
+rpart_splits <- function(fit, digits = getOption("digits")) {
+  splits <- fit$splits
+  if (!is.null(splits)) {
+    ff <- fit$frame
+    is.leaf <- ff$var == "<leaf>"
+    n <- nrow(splits)
+    nn <- ff$ncompete + ff$nsurrogate + !is.leaf
+    ix <- cumsum(c(1L, nn))
+    ix_prim <- unlist(mapply(ix, ix + c(ff$ncompete, 0), FUN = seq, SIMPLIFY = F))
+    type <- rep.int("surrogate", n)
+    type[ix_prim[ix_prim <= n]] <- "primary"
+    type[ix[ix <= n]] <- "main"
+    left <- character(nrow(splits))
+    side <- splits[, 2L]
+    for (i in seq_along(left)) {
+      left[i] <- if (side[i] == -1L)
+                   paste("<", format(signif(splits[i, 4L], digits)))
+                 else if (side[i] == 1L)
+                   paste(">=", format(signif(splits[i, 4L], digits)))
+                 else {
+                   catside <- fit$csplit[splits[i, 4L], 1:side[i]]
+                   paste(c("L", "-", "R")[catside], collapse = "", sep = "")
+                 }
+    }
+    cbind(data.frame(var = rownames(splits),
+                     type = type,
+                     node = rep(as.integer(row.names(ff)), times = nn),
+                     ix = rep(seq_len(nrow(ff)), nn),
+                     left = left),
+          as.data.frame(splits, row.names = F))
+  }
+}
+
+```
+
