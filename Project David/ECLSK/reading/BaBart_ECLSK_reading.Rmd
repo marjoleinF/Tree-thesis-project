@@ -24,7 +24,6 @@ library("here")
 library("multilevel")
 library("doParallel")
 library("tidyverse")
-library("LongCART")
 # library("mice")
 ```
 
@@ -67,37 +66,20 @@ gendata_smr <- function(data, palt = 0.5, n_gen){
 }
 ```
 
+
 ##Load Safety data
 
 ```{r Load Safety data}
 set.seed(42)
 
+load(file.path(here(),"Project David","ECLSK","Reading ability data.Rdata"))
 
+data <- readdata[readdata$CHILDID %in% sample(x = unique(readdata$CHILDID), size = 240),]
 
-data(ACTG175)
-sapply(ACTG175, function(x) sum(is.na(x)))
-## Remove missings
-ACTG175 <- ACTG175[!is.na(ACTG175$cd4), ]
+data$asmtmm <- as.factor(data$asmtmm)
+table(data$RACE)
 
-sapply(ACTG175, class)
-## Correct coding of factors
-ACTG175$hemo <- factor(ACTG175$hemo) 
-ACTG175$homo <- factor(ACTG175$homo)
-ACTG175$drugs <- factor(ACTG175$drugs)
-ACTG175$oprior <- factor(ACTG175$oprior)
-ACTG175$z30 <- factor(ACTG175$z30)
-ACTG175$zprior <- factor(ACTG175$zprior)
-ACTG175$race <- factor(ACTG175$race)
-ACTG175$str2 <- factor(ACTG175$str2)
-ACTG175$symptom <- factor(ACTG175$symptom)
-ACTG175$treat <- factor(ACTG175$treat)
-ACTG175$offtrt <- factor(ACTG175$offtrt)
-
-# lt <- lmertree(cd4 ~ time | (1|pidnum) | gender + wtkg + hemo + homo + drugs + karnof +
-#                oprior + z30 + zprior + race + str2 + symptom + treat + offtrt,
-#          data = ACTG175, cluster = pidnum)
-
-data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 400),]
+rm(readdata)
 ```
 
 ##Single GLMM tree
@@ -106,8 +88,11 @@ data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 40
 set.seed(42)
 nfolds <- 10
 nreps <- 10
-ngensizes <- c(1,2,5,10,20)
+ngensizes <- c(1,5,10)
+palt <- c(0, 0.25, 0.5)
 tel <- 0
+use_weights <- TRUE
+baygen <- TRUE
 
 tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
 
@@ -123,40 +108,37 @@ system.time(
 # foreach(k = 1:nreps, .packages = (c("dbarts","glmertree"))) %dopar% {
 for (k in 1:nreps){
   
-  system.time({
-  # this block makes sure "traindat" contains every level -- werkt niet!
+  # this block makes sure "traindat" contains every level
   levelvec <- 0
   while(mean(levelvec) != 1) {
     fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
     levelvec <- numeric()
       for (i in 1:nfolds){
-        trainlevels <- data[fold_ids != i, ]$pidnum
-        testlevels <- data[fold_ids == i, ]$pidnum
+        
+        # same as CHILDID but for RACE
+        if(min(table(data[fold_ids != i, ]$RACE)) < 1){
+          levelvec <- 0
+          print("stout!")
+          break} 
+        
+        trainlevels <- data[fold_ids != i, ]$CHILDID
+        testlevels <- data[fold_ids == i, ]$CHILDID
         levelvec[i] <- mean(testlevels %in% trainlevels)
         print(levelvec)
         if(levelvec[i] != 1){break}
       }
   }
-  })
   
-  # folds_ids_1 <- sample(rep(1:nfolds, times = ceiling(length(unique(data$pidnum))/nfolds)), size = length(unique(data$pidnum)), replace = FALSE)
-  # folds_ids_2 <- folds_ids_1 + 1
-  # 
-  # fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
-  
-  
-
   for (i in 1:nfolds){
     
     traindat <- data[fold_ids != i, ]
     testdat <- data[fold_ids == i, ]
     
-    
     # Fit a regualar GLMM tree
-    glmtree <- lmertree(cd4 ~ time | (1 | pidnum) | gender + wtkg + hemo + homo + drugs + 
-                          karnof + oprior + z30 + zprior + race + str2 + symptom + 
-                          treat + offtrt, 
-                        data = traindat, cluster = pidnum)
+    glmtree <- lmertree(score ~ 1 | (1|CHILDID) | GENDER + RACE + WKSESL + 
+                          C1GMOTOR + C1FMOTOR + T1INTERN + T1EXTERN + 
+                          T1INTERP + T1CONTRO + P1FIRKDG + AGEBASELINE,
+                     data = traindat)
 
     pred_glmtree <- predict(glmtree, newdata = testdat, allow.new.levels = TRUE)
 
@@ -164,38 +146,39 @@ for (k in 1:nreps){
     tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
     
     # fit multilevel BART
-    Mbart <- rbart_vi(cd4 ~ time + gender + wtkg + hemo + homo + drugs + karnof +
-+                oprior + z30 + zprior + race + str2 + symptom + treat + offtrt,
-       data = traindat, group.by = traindat$pidnum,
-       test = testdat, group.by.test = testdat$pidnum,
+    Mbart <- rbart_vi(score ~ GENDER + RACE + WKSESL + C1GMOTOR + C1FMOTOR + 
+                        T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
+                        AGEBASELINE,
+       data = traindat, group.by = traindat$CHILDID,
+       test = testdat, group.by.test = testdat$CHILDID,
        n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
     
     posterior <- Mbart$yhat.train
     
     MSE[(k-1)*10+i,2] <- mean((testdat$score - Mbart$yhat.test.mean)^2)
     
-    # fit BaBart GLMM trees with different sizes of Ngen using parralel processing
-    babart_MSE_treesize <- foreach(ngen = ngensizes, .packages = "glmertree") %do% {
+    # fit BaBart GLMM trees with different sizes of Ngen
+    for(ngen in ngensizes){
 
       surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
       
-      # .GlobalEnv$ngen <- ngen # some weird parralel processing stuff
-      # .GlobalEnv$surr_mlbart <- surr_mlbart # some weird parralel processing stuff
-      
-      babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo + homo + drugs + 
-                          karnof + oprior + z30 + zprior + race + str2 + symptom + 
-                          treat + offtrt, cluster = pidnum,
-                       data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
-
+      if(use_weights){
+        babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | GENDER + RACE + WKSESL + 
+                             C1GMOTOR + C1FMOTOR + T1INTERN + T1EXTERN + 
+                             T1INTERP + T1CONTRO + P1FIRKDG + AGEBASELINE,
+                         data = surr_mlbart, 
+                         weights = rep(1/ngen, times = nrow(surr_mlbart)))
+      }
+      else{
+        babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | GENDER + RACE + WKSESL + 
+                     C1GMOTOR + C1FMOTOR + T1INTERN + T1EXTERN + 
+                     T1INTERP + T1CONTRO + P1FIRKDG + AGEBASELINE,
+                 data = surr_mlbart)
+      }
       pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
       
-      c(mean((testdat$score - pred_babart)^2),
-           (length(babart$tree)-1)/2)
-    }
-    # stores the values in the list
-    for(ngen in ngensizes){
-      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][1]
-      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][2]
+      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean(testdat$score - pred_babart)^2
+      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
     }
     
     tel <- tel + 1
@@ -206,6 +189,18 @@ for (k in 1:nreps){
 
 # stopCluster(cl)
 ```
+
+
+Save/Load data
+
+```{r}
+# save MSE as CSV
+write.csv(x = MSE, file = paste("MSE","Reading",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+
+# save tree_size as CSV
+write.csv(x = tree_size, file = paste("TreeSize","Reading",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+```
+
 
 Visualisation
 
@@ -227,25 +222,4 @@ par(mar = c(7.1, 4.1, 4.1, 2.1))
 boxplot(tree_size, horizontal = F, las = 2)
 abline(h = median(MSE$Bart))
 ```
-
-Save/Load data
-
-```{r}
-################# SAFETYDATA #################
-
-##### WITH weights 2 to 10
-# saveRDS(MSE, file = "MSE_weighted_1to10")
-# saveRDS(tree_size, file = "tree_size_weighted_1to10")
-
-# MSE <- read.csv(file.path(here(),"Project David","MSE_NOTweighted_par_1to10"), row.names = 1)
-# tree_size <- read.csv(file.path(here(),"Project David","tree_size_NOTweighted_par_1to10"), row.names = 1)
-
-##### WITHOUT weights 2 to 10
-saveRDS(MSE, file = "MSE_NOTweighted_1.2.5.10.20_ECLSK_time_math")
-saveRDS(tree_size, file = "tree_size_NOTweighted_1.2.5.10.20_ECLSK_time_math")
-
-MSE <- read.csv(file.path(here(),"Project David","MSE_NOTweighted_1.2.5.10.20_ECLSK_time_math"), row.names = 1)
-tree_size <- read.csv(file.path(here(),"Project David","tree_size_NOTweighted_1.2.5.10.20_ECLSK_time_math"), row.names = 1)
-```
-
 

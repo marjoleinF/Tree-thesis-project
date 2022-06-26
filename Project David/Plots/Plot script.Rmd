@@ -1,0 +1,26 @@
+---
+title: "Plots"
+author: "David Eleveld s1741225"
+date: "25-6-2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("here")
+library("tidyverse")
+```
+
+
+
+```{r Safety}
+
+# Weighted
+read.csv(file.path(here(),"Project David","Safety","MSE_weighted_1to10"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","Safety","tree_size_weighted_1to10"), header = TRUE, row.names = 1)
+
+# not weighted
+read.csv(file.path(here(),"Project David","Safety","MSE_NOTweighted_par_1to10"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","Safety","tree_size_NOTweighted_par_1to10"), header = TRUE, row.names = 1)
+```
+
