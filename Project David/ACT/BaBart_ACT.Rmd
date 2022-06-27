@@ -22,10 +22,8 @@ library("glmertree")
 library("dplyr")
 library("here")
 library("multilevel")
-library("doParallel")
 library("tidyverse")
 library("LongCART")
-# library("mice")
 ```
 
 ##Bayesian data generation function
@@ -72,14 +70,10 @@ gendata_smr <- function(data, palt = 0.5, n_gen){
 ```{r Load Safety data}
 set.seed(42)
 
-
-
 data(ACTG175)
-sapply(ACTG175, function(x) sum(is.na(x)))
 ## Remove missings
 ACTG175 <- ACTG175[!is.na(ACTG175$cd4), ]
 
-sapply(ACTG175, class)
 ## Correct coding of factors
 ACTG175$hemo <- factor(ACTG175$hemo) 
 ACTG175$homo <- factor(ACTG175$homo)
@@ -93,11 +87,8 @@ ACTG175$symptom <- factor(ACTG175$symptom)
 ACTG175$treat <- factor(ACTG175$treat)
 ACTG175$offtrt <- factor(ACTG175$offtrt)
 
-# lt <- lmertree(cd4 ~ time | (1|pidnum) | gender + wtkg + hemo + homo + drugs + karnof +
-#                oprior + z30 + zprior + race + str2 + symptom + treat + offtrt,
-#          data = ACTG175, cluster = pidnum)
-
-data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 400),]
+data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 455),]
+rm(ACTG175)
 ```
 
 ##Single GLMM tree
@@ -106,45 +97,39 @@ data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 40
 set.seed(42)
 nfolds <- 10
 nreps <- 10
-ngensizes <- c(1,2,5,10,20)
+ngensizes <- c(1,5,10)
+palt <- c(0, 0.25, 0.5)
 tel <- 0
+use_weights <- TRUE
+baygen <- TRUE
 
 tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
 
 colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
 rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
 
-
-# cl <- makeCluster(detectCores()-1)
-# registerDoParallel(cl)
-
-
 system.time(
-# foreach(k = 1:nreps, .packages = (c("dbarts","glmertree"))) %dopar% {
 for (k in 1:nreps){
   
   system.time({
-  # this block makes sure "traindat" contains every level -- werkt niet!
+  j <- 0
+  # this block makes sure "traindat" contains every level
   levelvec <- 0
   while(mean(levelvec) != 1) {
+    j <- j + 1
+    if(j %% 1000 == 0){print(paste0("iteration: ", j))}
     fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
     levelvec <- numeric()
       for (i in 1:nfolds){
         trainlevels <- data[fold_ids != i, ]$pidnum
         testlevels <- data[fold_ids == i, ]$pidnum
         levelvec[i] <- mean(testlevels %in% trainlevels)
-        print(levelvec)
+        # print(levelvec)
         if(levelvec[i] != 1){break}
       }
   }
+  print("done")
   })
-  
-  # folds_ids_1 <- sample(rep(1:nfolds, times = ceiling(length(unique(data$pidnum))/nfolds)), size = length(unique(data$pidnum)), replace = FALSE)
-  # folds_ids_2 <- folds_ids_1 + 1
-  # 
-  # fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
-  
-  
 
   for (i in 1:nfolds){
     
@@ -153,9 +138,9 @@ for (k in 1:nreps){
     
     
     # Fit a regualar GLMM tree
-    glmtree <- lmertree(cd4 ~ time | (1 | pidnum) | gender + wtkg + hemo + homo + drugs + 
-                          karnof + oprior + z30 + zprior + race + str2 + symptom + 
-                          treat + offtrt, 
+    glmtree <- lmertree(cd4 ~ time | (1 | pidnum) | gender + wtkg + hemo + homo +
+                          drugs + karnof + oprior + z30 + zprior + race + str2 +
+                          symptom + treat + offtrt, 
                         data = traindat, cluster = pidnum)
 
     pred_glmtree <- predict(glmtree, newdata = testdat, allow.new.levels = TRUE)
@@ -165,7 +150,8 @@ for (k in 1:nreps){
     
     # fit multilevel BART
     Mbart <- rbart_vi(cd4 ~ time + gender + wtkg + hemo + homo + drugs + karnof +
-+                oprior + z30 + zprior + race + str2 + symptom + treat + offtrt,
+                        oprior + z30 + zprior + race + str2 + symptom + treat + 
+                        offtrt,
        data = traindat, group.by = traindat$pidnum,
        test = testdat, group.by.test = testdat$pidnum,
        n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
@@ -174,37 +160,45 @@ for (k in 1:nreps){
     
     MSE[(k-1)*10+i,2] <- mean((testdat$score - Mbart$yhat.test.mean)^2)
     
-    # fit BaBart GLMM trees with different sizes of Ngen using parralel processing
-    babart_MSE_treesize <- foreach(ngen = ngensizes, .packages = "glmertree") %do% {
+    # fit BaBart GLMM trees with different sizes of Ngen
+    for(ngen in ngensizes){
 
       surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
       
-      # .GlobalEnv$ngen <- ngen # some weird parralel processing stuff
-      # .GlobalEnv$surr_mlbart <- surr_mlbart # some weird parralel processing stuff
-      
-      babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo + homo + drugs + 
-                          karnof + oprior + z30 + zprior + race + str2 + symptom + 
-                          treat + offtrt, cluster = pidnum,
-                       data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
-
+      if(use_weights){
+        babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                             homo + drugs + karnof + oprior + z30 + zprior +
+                             race + str2 + symptom + treat + offtrt,
+                           cluster = pidnum, data = surr_mlbart,
+                           weights = rep(1/ngen, times = nrow(surr_mlbart)))
+      }
+      else{
+        babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                             homo + drugs + karnof + oprior + z30 + zprior +
+                             race + str2 + symptom + treat + offtrt,
+                           cluster = pidnum, data = surr_mlbart)
+      }
       pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
       
-      c(mean((testdat$score - pred_babart)^2),
-           (length(babart$tree)-1)/2)
+      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
+      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
     }
-    # stores the values in the list
-    for(ngen in ngensizes){
-      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][1]
-      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][2]
-    }
-    
     tel <- tel + 1
     print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
   }
 }
 )
 
-# stopCluster(cl)
+```
+
+Save/Load data
+
+```{r}
+# save MSE as CSV
+write.csv(x = MSE, file = paste("MSE","ACT",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+
+# save tree_size as CSV
+write.csv(x = tree_size, file = paste("TreeSize","ACT",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
 ```
 
 Visualisation
@@ -227,25 +221,4 @@ par(mar = c(7.1, 4.1, 4.1, 2.1))
 boxplot(tree_size, horizontal = F, las = 2)
 abline(h = median(MSE$Bart))
 ```
-
-Save/Load data
-
-```{r}
-################# SAFETYDATA #################
-
-##### WITH weights 2 to 10
-# saveRDS(MSE, file = "MSE_weighted_1to10")
-# saveRDS(tree_size, file = "tree_size_weighted_1to10")
-
-# MSE <- read.csv(file.path(here(),"Project David","MSE_NOTweighted_par_1to10"), row.names = 1)
-# tree_size <- read.csv(file.path(here(),"Project David","tree_size_NOTweighted_par_1to10"), row.names = 1)
-
-##### WITHOUT weights 2 to 10
-saveRDS(MSE, file = "MSE_NOTweighted_1.2.5.10.20_ECLSK_time_math")
-saveRDS(tree_size, file = "tree_size_NOTweighted_1.2.5.10.20_ECLSK_time_math")
-
-MSE <- read.csv(file.path(here(),"Project David","MSE_NOTweighted_1.2.5.10.20_ECLSK_time_math"), row.names = 1)
-tree_size <- read.csv(file.path(here(),"Project David","tree_size_NOTweighted_1.2.5.10.20_ECLSK_time_math"), row.names = 1)
-```
-
 

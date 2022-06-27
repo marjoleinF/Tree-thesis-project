@@ -12,9 +12,7 @@ library("tidyverse")
 ```
 
 
-
 ```{r Safety}
-
 # Weighted
 read.csv(file.path(here(),"Project David","Safety","MSE_weighted_1to10"), header = TRUE, row.names = 1)
 read.csv(file.path(here(),"Project David","Safety","tree_size_weighted_1to10"), header = TRUE, row.names = 1)
@@ -23,4 +21,38 @@ read.csv(file.path(here(),"Project David","Safety","tree_size_weighted_1to10"), 
 read.csv(file.path(here(),"Project David","Safety","MSE_NOTweighted_par_1to10"), header = TRUE, row.names = 1)
 read.csv(file.path(here(),"Project David","Safety","tree_size_NOTweighted_par_1to10"), header = TRUE, row.names = 1)
 ```
+
+```{r ECLSK_science}
+# Weighted
+read.csv(file.path(here(),"Project David","ECLSK","science","MSE_Science_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","ECLSK","science","TreeSize_Science_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+
+# not weighted
+read.csv(file.path(here(),"Project David","ECLSK","science","MSE_Science_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","ECLSK","science","TreeSize_Science_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+```
+
+```{r ECLSK_reading}
+# Weighted
+read.csv(file.path(here(),"Project David","ECLSK","reading","MSE_Reading_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","ECLSK","reading","TreeSize_Reading_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+
+# not weighted
+read.csv(file.path(here(),"Project David","ECLSK","reading","MSE_Reading_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","ECLSK","reading","TreeSize_Reading_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+```
+
+
+```{r ECLSK_math}
+# Weighted
+read.csv(file.path(here(),"Project David","ECLSK","math","MSE_Math_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","ECLSK","math","TreeSize_Math_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+
+# not weighted
+read.csv(file.path(here(),"Project David","ECLSK","math","MSE_Math_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+read.csv(file.path(here(),"Project David","ECLSK","math","TreeSize_Math_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+```
+
+
+
 
