@@ -9,17 +9,42 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 library("here")
 library("tidyverse")
+library("Hmisc")
 ```
 
 
 ```{r Safety}
 # Weighted
-read.csv(file.path(here(),"Project David","Safety","MSE_weighted_1to10"), header = TRUE, row.names = 1)
-read.csv(file.path(here(),"Project David","Safety","tree_size_weighted_1to10"), header = TRUE, row.names = 1)
+MSE_saf_w <- read.csv(file.path(here(),"Project David","Safety","MSE_Safety_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+TS_saf_w <- read.csv(file.path(here(),"Project David","Safety","TreeSize_Safety_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
 
 # not weighted
-read.csv(file.path(here(),"Project David","Safety","MSE_NOTweighted_par_1to10"), header = TRUE, row.names = 1)
-read.csv(file.path(here(),"Project David","Safety","tree_size_NOTweighted_par_1to10"), header = TRUE, row.names = 1)
+MSE_saf <- read.csv(file.path(here(),"Project David","Safety","MSE_Safety_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+TS_saf <- read.csv(file.path(here(),"Project David","Safety","TreeSize_Safety_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+
+MSE_saf_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+
+TS_saf_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+
+MSE_saf %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+
+TS_saf %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
 ```
 
 ```{r ECLSK_science}
