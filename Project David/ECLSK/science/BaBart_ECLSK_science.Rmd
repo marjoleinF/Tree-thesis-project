@@ -177,7 +177,7 @@ for (k in 1:nreps){
       }
       pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
       
-      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean(testdat$score - pred_babart)^2
+      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
       tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
     }
     
@@ -196,7 +196,7 @@ Save/Load data
 ```{r}
 # save MSE as CSV
 write.csv(x = MSE, file = paste("MSE","Science",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
-
+ 
 # save tree_size as CSV
 write.csv(x = tree_size, file = paste("TreeSize","Science",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
 ```

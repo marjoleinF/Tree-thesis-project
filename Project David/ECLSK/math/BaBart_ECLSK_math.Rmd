@@ -69,7 +69,7 @@ gendata_smr <- function(data, palt = 0.5, n_gen){
 
 ##Load Safety data
 
-```{r Load data}
+```{r Load Safety data}
 set.seed(42)
 
 load(file.path(here(),"Project David","ECLSK","Reading ability data.Rdata"))
