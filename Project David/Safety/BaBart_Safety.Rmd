@@ -1,15 +1,9 @@
 ---
-title: "BaBart presentation 5-mei"
+title: "BaBart_Safety"
 author: "David Eleveld s1741225"
 date: "3-5-2022"
 output: pdf_document
 ---
-
-#Presentatie 5-mei 2022
-
-Met een kleine verandering heb ik volgens mij eindelijk de correcte posterior distribution weten te vinden. In het bart-element staat namelijk een `...$yhat.train`. Deze heeft de correcte dimensies en de zelfde gemiddeldes als `...$yhat.train.mean`. 
-
-Sidenote: je moet BINNEN de bart functie een seed setten met `seed = ...`. Als je dit niet doet, maar wel een seed set voor de bart functie werkt het niet.
 
 #Setup
 
@@ -22,9 +16,7 @@ library("glmertree")
 library("dplyr")
 library("here")
 library("multilevel")
-library("doParallel")
 library("tidyverse")
-# library("mice")
 ```
 
 ##Bayesian data generation function
@@ -73,15 +65,6 @@ set.seed(42)
 data = read_sav(file.path(here(),"Project David","Safety.sav"))
 ```
 
-#Fit models
-
-In een mooie reps * k-fold loop halen we de MSE op. Het duurt helaas wel echt mega lang. Ik probeerde hem met 10 reps te runnen en met `ngensizes = 1:10`, maar toen kwam er een crash met de boodschap: `Error in integer() : invalid 'length' argument`. De dataframe zat verder wel half vol voordat hij stopte. Misschien een memory ding?
-
-Vraagje: Ik heb het volgende stukje code van je gestolen: `fold_ids <- sample(rep(1:10, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = TRUE)`
-
-Ik heb daar dit van gemaakt: `fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)`
-
-`Replace = FALSE` lijkt me logischer omdat alle folds dan even groot zijn. Of hoeft dat niet? Als `Replace = TRUE` kan je net zo goed uit `1:10` sampelen
 
 ##Single GLMM tree
 
@@ -89,24 +72,34 @@ Ik heb daar dit van gemaakt: `fold_ids <- sample(rep(1:nfolds, times = ceiling(n
 set.seed(42)
 nfolds <- 10
 nreps <- 10
-ngensizes <- c(2:10)
+ngensizes <- c(1,5,10)
+palt <- c(0, 0.25, 0.5)
 tel <- 0
+use_weights <- TRUE
+baygen <- TRUE
 
 tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
 
 colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
 rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
 
-
-cl <- makeCluster(detectCores()-1)
-registerDoParallel(cl)
-
-
 system.time(
 # foreach(k = 1:nreps, .packages = (c("dbarts","glmertree"))) %dopar% {
 for (k in 1:nreps){
   
-  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
+  # this block makes sure "traindat" contains every level
+  levelvec <- 0
+  while(mean(levelvec) != 1) {
+    fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
+    levelvec <- numeric()
+      for (i in 1:nfolds){
+        trainlevels <- data[fold_ids != i, ]$street
+        testlevels <- data[fold_ids == i, ]$street
+        levelvec[i] <- mean(testlevels %in% trainlevels)
+        print(levelvec)
+        if(levelvec[i] != 1){break}
+      }
+  }
   
   for (i in 1:nfolds){
     
@@ -132,36 +125,43 @@ for (k in 1:nreps){
     
     MSE[(k-1)*10+i,2] <- mean((testdat$unsafe - Mbart$yhat.test.mean)^2)
     
-    # fit BaBart GLMM trees with different sizes of Ngen using parralel processing
-    babart_MSE_treesize <- foreach(ngen = ngensizes, .packages = "glmertree") %dopar% {
+    # fit BaBart GLMM trees with different sizes of Ngen
+    for(ngen in ngensizes){
 
       surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
       
-      .GlobalEnv$ngen <- ngen # some weird parralel processing stuff
-      .GlobalEnv$surr_mlbart <- surr_mlbart # some weird parralel processing stuff
+      if(use_weights){
+        babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                       data = surr_mlbart,
+                       weights = rep(1/ngen, times = nrow(surr_mlbart)))
+      }
+      else{
+        babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                       data = surr_mlbart)
+      }
+      pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
       
-      babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
-                       data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
-
-      pred_babart <- predict(babart, newdata = testdat)
-      
-      c(mean((testdat$unsafe - pred_babart)^2),
-           (length(babart$tree)-1)/2)
+      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
+      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
     }
-    # stores the values in the list
-    for(ngen in ngensizes){
-      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][1]
-      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- babart_MSE_treesize[[match(ngen,ngensizes)]][2]
-    }
-    
     tel <- tel + 1
     print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
   }
 }
 )
 
-stopCluster(cl)
 ```
+
+Save/Load data
+
+```{r}
+# save MSE as CSV
+write.csv(x = MSE, file = paste("MSE","Safety",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+
+# save tree_size as CSV
+write.csv(x = tree_size, file = paste("TreeSize","Safety",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+```
+
 
 Visualisation
 
@@ -184,24 +184,5 @@ boxplot(tree_size, horizontal = F, las = 2)
 abline(h = median(MSE$Bart))
 ```
 
-Save/Load data
-
-```{r}
-################# SAFETYDATA #################
-
-##### WITH weights 2 to 10
-# saveRDS(MSE, file = "MSE_weighted_1to10")
-# saveRDS(tree_size, file = "tree_size_weighted_1to10")
-
-# MSE <- read.csv(file.path(here(),"Project David","MSE_NOTweighted_par_1to10"), row.names = 1)
-# tree_size <- read.csv(file.path(here(),"Project David","tree_size_NOTweighted_par_1to10"), row.names = 1)
-
-##### WITHOUT weights 2 to 10
-# saveRDS(MSE_weighted_par_1to10, file = "MSE_weighted_par_1to10")
-# saveRDS(tree_size_weighted_par_1to10, file = "tree_size_weighted_par_1to10")
-
-# MSE <- read.csv(file.path(here(),"Project David","MSE_NOTweighted_par_1to10"), row.names = 1)
-# tree_size <- read.csv(file.path(here(),"Project David","tree_size_NOTweighted_par_1to10"), row.names = 1)
-```
 
 

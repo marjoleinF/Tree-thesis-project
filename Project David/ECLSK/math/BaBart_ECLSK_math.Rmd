@@ -22,9 +22,7 @@ library("glmertree")
 library("dplyr")
 library("here")
 library("multilevel")
-library("doParallel")
 library("tidyverse")
-# library("mice")
 ```
 
 ##Bayesian data generation function
@@ -72,14 +70,14 @@ gendata_smr <- function(data, palt = 0.5, n_gen){
 ```{r Load Safety data}
 set.seed(42)
 
-load(file.path(here(),"Project David","ECLSK","Reading ability data.Rdata"))
+load(file.path(here(),"Project David","ECLSK","Math ability data.Rdata"))
 
-data <- readdata[readdata$CHILDID %in% sample(x = unique(readdata$CHILDID), size = 240),]
+data <- mathdata[mathdata$CHILDID %in% sample(x = unique(mathdata$CHILDID), size = 240),]
 
 data$asmtmm <- as.factor(data$asmtmm)
 table(data$RACE)
 
-rm(readdata)
+rm(mathdata)
 ```
 
 ##Single GLMM tree
@@ -91,17 +89,13 @@ nreps <- 10
 ngensizes <- c(1,5,10)
 palt <- c(0, 0.25, 0.5)
 tel <- 0
-use_weights <- TRUE
+use_weights <- FALSE
 baygen <- TRUE
 
 tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
 
 colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
 rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
-
-
-# cl <- makeCluster(detectCores()-1)
-# registerDoParallel(cl)
 
 
 system.time(
@@ -186,19 +180,16 @@ for (k in 1:nreps){
   }
 }
 )
-
-# stopCluster(cl)
 ```
-
 
 Save/Load data
 
 ```{r}
 # save MSE as CSV
-write.csv(x = MSE, file = paste("MSE","Reading",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+write.csv(x = MSE, file = paste("MSE","Math",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
 
 # save tree_size as CSV
-write.csv(x = tree_size, file = paste("TreeSize","Reading",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+write.csv(x = tree_size, file = paste("TreeSize","Math",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
 ```
 
 
