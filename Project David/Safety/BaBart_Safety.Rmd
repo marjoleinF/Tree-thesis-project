@@ -73,10 +73,12 @@ set.seed(42)
 nfolds <- 10
 nreps <- 10
 ngensizes <- c(1,5,10)
-palt <- c(0, 0.25, 0.5)
+palt <- c(0, 0.25, 0.5, 0.75, 1)
 tel <- 0
 use_weights <- FALSE
 baygen <- TRUE
+
+
 
 tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
 

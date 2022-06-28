@@ -150,7 +150,39 @@ TS_ECLSKmt %>%
   geom_jitter() +
   stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
 ```
+```{r ACT}
+# Weighted
+MSE_ACT_w <- read.csv(file.path(here(),"Project David","ACT","MSE_ACT_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+TS_ACT_w <- read.csv(file.path(here(),"Project David","ACT","TreeSize_ACT_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
 
+# not weighted
+MSE_ACT <- read.csv(file.path(here(),"Project David","ACT","MSE_ACT_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+TS_ACT <- read.csv(file.path(here(),"Project David","ACT","TreeSize_ACT_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+
+MSE_ACT_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_ACT_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+
+TS_ACT_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_ACT_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+
+MSE_ACT %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+
+TS_ACT %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
+  geom_jitter() +
+  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+```
 
 
 
