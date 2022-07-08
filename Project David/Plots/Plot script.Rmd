@@ -10,178 +10,377 @@ knitr::opts_chunk$set(echo = TRUE)
 library("here")
 library("tidyverse")
 library("Hmisc")
+library("ggpubr")
 ```
 
 
 ```{r Safety}
-# Weighted
-MSE_saf_w <- read.csv(file.path(here(),"Project David","Safety","MSE_Safety_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
-TS_saf_w <- read.csv(file.path(here(),"Project David","Safety","TreeSize_Safety_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+course <- "Safety"
 
-# not weighted
-MSE_saf <- read.csv(file.path(here(),"Project David","Safety","MSE_Safety_baygen[1,5,10]_"), header = TRUE, row.names = 1)
-TS_saf <- read.csv(file.path(here(),"Project David","Safety","TreeSize_Safety_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+# Baysian + Weighted
+MSE_saf_bay_w <- read.csv(file.path(here(),"Project David","safety",paste0("MSE_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
+TS_saf_bay_w <- read.csv(file.path(here(),"Project David","safety",paste0("TreeSize_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
 
-MSE_saf_w %>% 
+# Baysian + NOT Weighted
+MSE_saf_bay <- read.csv(file.path(here(),"Project David","safety",paste0("MSE_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+TS_saf_bay <- read.csv(file.path(here(),"Project David","safety",paste0("TreeSize_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+
+# Smearing + weighted
+MSE_saf_smr_w <- read.csv(file.path(here(),"Project David","safety",paste0("MSE_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+TS_saf_smr_w <- read.csv(file.path(here(),"Project David","safety",paste0("TreeSize_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+
+a <- MSE_saf_bay_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_bay_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "MSE")
 
-TS_saf_w %>% 
-  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+b <- TS_saf_bay_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_saf_bay_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "Tree Size")
 
-MSE_saf %>% 
+c <- MSE_saf_bay %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_bay)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "MSE")
 
-TS_saf %>% 
+d <- TS_saf_bay %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_saf_bay)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "Tree Size")
+
+e <- MSE_saf_smr_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_smr_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "MSE") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+f <- TS_saf_smr_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_saf_smr_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "Tree Size") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+
+tgrob <- text_grob(course,size = 20)
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,3,0,0, "cm"))
+ggarrange(NULL,plot_0,NULL,a,c,e,b,d,f, 
+          labels = c("","","","A", "B", "C", "D", "E", "F"),
+          ncol = 3, nrow = 3, heights = c(1,7,7))
+
+# # Weighted
+# MSE_saf_bay_w <- read.csv(file.path(here(),"Project David","safety","MSE_Safety_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+# TS_saf_bay_w <- read.csv(file.path(here(),"Project David","safety","TreeSize_Safety_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+
+# # not weighted
+# MSE_saf <- read.csv(file.path(here(),"Project David","safety","MSE_Safety_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+# TS_saf <- read.csv(file.path(here(),"Project David","safety","TreeSize_Safety_baygen[1,5,10]_"), header = TRUE, row.names = 1)
 ```
 
 ```{r ECLSK_science}
-# Weighted
-MSE_ECLSKsc_w <- read.csv(file.path(here(),"Project David","ECLSK","science","MSE_Science_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
-TS_ECLSKsc_w <- read.csv(file.path(here(),"Project David","ECLSK","science","TreeSize_Science_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+course <- "Science"
 
-# not weighted
-MSE_ECLSKsc <- read.csv(file.path(here(),"Project David","ECLSK","science","MSE_Science_baygen[1,5,10]_"), header = TRUE, row.names = 1)
-TS_ECLSKsc <- read.csv(file.path(here(),"Project David","ECLSK","science","TreeSize_Science_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+# Baysian + Weighted
+MSE_sci_bay_w <- read.csv(file.path(here(),"Project David","ECLSK","science",paste0("MSE_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
+TS_sci_bay_w <- read.csv(file.path(here(),"Project David","ECLSK","science",paste0("TreeSize_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
 
-MSE_ECLSKsc_w %>% 
+# Baysian + NOT Weighted
+MSE_sci_bay <- read.csv(file.path(here(),"Project David","ECLSK","science",paste0("MSE_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+TS_sci_bay <- read.csv(file.path(here(),"Project David","ECLSK","science",paste0("TreeSize_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+
+# Smearing + weighted
+MSE_sci_smr_w <- read.csv(file.path(here(),"Project David","ECLSK","science",paste0("MSE_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+TS_sci_smr_w <- read.csv(file.path(here(),"Project David","ECLSK","science",paste0("TreeSize_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+
+a <- MSE_sci_bay_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_sci_bay_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "MSE")
 
-TS_ECLSKsc_w %>% 
+b <- TS_sci_bay_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_sci_bay_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "Tree Size")
+
+c <- MSE_sci_bay %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_sci_bay)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "MSE")
 
-MSE_ECLSKsc %>% 
+d <- TS_sci_bay %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_sci_bay)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "Tree Size")
+
+e <- MSE_sci_smr_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_sci_smr_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "MSE") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
 
-TS_ECLSKsc %>% 
-  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+f <- TS_sci_smr_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_sci_smr_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "Tree Size") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
 
+tgrob <- text_grob(course,size = 20)
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,3,0,0, "cm"))
+ggarrange(NULL,plot_0,NULL,a,c,e,b,d,f, 
+          labels = c("","","","A", "B", "C", "D", "E", "F"),
+          ncol = 3, nrow = 3, heights = c(1,7,7))
 ```
 
 ```{r ECLSK_reading}
-# Weighted
-MSE_ECLSKrd_w <- read.csv(file.path(here(),"Project David","ECLSK","reading","MSE_Reading_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
-TS_ECLSKrd_w <- read.csv(file.path(here(),"Project David","ECLSK","reading","TreeSize_Reading_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+course <- "Reading"
 
-# not weighted
-MSE_ECLSKrd <- read.csv(file.path(here(),"Project David","ECLSK","reading","MSE_Reading_baygen[1,5,10]_"), header = TRUE, row.names = 1)
-TS_ECLSKrd <- read.csv(file.path(here(),"Project David","ECLSK","reading","TreeSize_Reading_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+# Baysian + Weighted
+MSE_rd_bay_w <- read.csv(file.path(here(),"Project David","ECLSK","reading",paste0("MSE_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
+TS_rd_bay_w <- read.csv(file.path(here(),"Project David","ECLSK","reading",paste0("TreeSize_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
 
-MSE_ECLSKrd_w %>% 
+# Baysian + NOT Weighted
+MSE_rd_bay <- read.csv(file.path(here(),"Project David","ECLSK","reading",paste0("MSE_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+TS_rd_bay <- read.csv(file.path(here(),"Project David","ECLSK","reading",paste0("TreeSize_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+
+# Smearing + weighted
+MSE_rd_smr_w <- read.csv(file.path(here(),"Project David","ECLSK","reading",paste0("MSE_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+TS_rd_smr_w <- read.csv(file.path(here(),"Project David","ECLSK","reading",paste0("TreeSize_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+
+a <- MSE_rd_bay_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_rd_bay_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "MSE")
 
-TS_ECLSKrd_w %>% 
-  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+b <- TS_rd_bay_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_rd_bay_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "Tree Size")
 
-MSE_ECLSKrd %>% 
+c <- MSE_rd_bay %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_rd_bay)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "MSE")
 
-TS_ECLSKrd %>% 
+d <- TS_rd_bay %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_rd_bay)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "Tree Size")
+
+e <- MSE_rd_smr_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_rd_smr_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "MSE") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+f <- TS_rd_smr_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_rd_smr_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "Tree Size") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+tgrob <- text_grob(course,size = 20)
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,3,0,0, "cm"))
+ggarrange(NULL,plot_0,NULL,a,c,e,b,d,f, 
+          labels = c("","","","A", "B", "C", "D", "E", "F"),
+          ncol = 3, nrow = 3, heights = c(1,7,7))
 ```
 
 
 ```{r ECLSK_math}
-# Weighted
-MSE_ECLSKmt_w <- read.csv(file.path(here(),"Project David","ECLSK","math","MSE_Math_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
-TS_ECLSKmt_w <- read.csv(file.path(here(),"Project David","ECLSK","math","TreeSize_Math_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+course <- "Math"
 
-# not weighted
-MSE_ECLSKmt <- read.csv(file.path(here(),"Project David","ECLSK","math","MSE_Math_baygen[1,5,10]_"), header = TRUE, row.names = 1)
-TS_ECLSKmt <- read.csv(file.path(here(),"Project David","ECLSK","math","TreeSize_Math_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+# Baysian + Weighted
+MSE_mth_bay_w <- read.csv(file.path(here(),"Project David","ECLSK","math",paste0("MSE_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
+TS_mth_bay_w <- read.csv(file.path(here(),"Project David","ECLSK","math",paste0("TreeSize_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
 
-MSE_ECLSKmt_w %>% 
+# Baysian + NOT Weighted
+MSE_mth_bay <- read.csv(file.path(here(),"Project David","ECLSK","math",paste0("MSE_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+TS_mth_bay <- read.csv(file.path(here(),"Project David","ECLSK","math",paste0("TreeSize_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+
+# Smearing + weighted
+MSE_mth_smr_w <- read.csv(file.path(here(),"Project David","ECLSK","math",paste0("MSE_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+TS_mth_smr_w <- read.csv(file.path(here(),"Project David","ECLSK","math",paste0("TreeSize_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+
+a <- MSE_mth_bay_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_mth_bay_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "MSE")
 
-TS_ECLSKmt_w %>% 
-  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+b <- TS_mth_bay_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_mth_bay_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "Tree Size")
 
-MSE_ECLSKmt %>% 
+c <- MSE_mth_bay %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_mth_bay)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "MSE")
 
-TS_ECLSKmt %>% 
+d <- TS_mth_bay %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_mth_bay)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "Tree Size")
+
+e <- MSE_mth_smr_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_mth_smr_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "MSE") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+f <- TS_mth_smr_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_mth_smr_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "Tree Size") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+tgrob <- text_grob(course,size = 20)
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,3,0,0, "cm"))
+ggarrange(NULL,plot_0,NULL,a,c,e,b,d,f, 
+          labels = c("","","","A", "B", "C", "D", "E", "F"),
+          ncol = 3, nrow = 3, heights = c(1,7,7))
 ```
 ```{r ACT}
-# Weighted
-MSE_ACT_w <- read.csv(file.path(here(),"Project David","ACT","MSE_ACT_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
-TS_ACT_w <- read.csv(file.path(here(),"Project David","ACT","TreeSize_ACT_baygen[1,5,10]_weighted"), header = TRUE, row.names = 1)
+course <- "ACT"
 
-# not weighted
-MSE_ACT <- read.csv(file.path(here(),"Project David","ACT","MSE_ACT_baygen[1,5,10]_"), header = TRUE, row.names = 1)
-TS_ACT <- read.csv(file.path(here(),"Project David","ACT","TreeSize_ACT_baygen[1,5,10]_"), header = TRUE, row.names = 1)
+# Baysian + Weighted
+MSE_act_bay_w <- read.csv(file.path(here(),"Project David","ACT",paste0("MSE_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
+TS_act_bay_w <- read.csv(file.path(here(),"Project David","ACT",paste0("TreeSize_",course,"_baygen[1,5,10]_weighted")), header = TRUE, row.names = 1)
 
-MSE_ACT_w %>% 
+# Baysian + NOT Weighted
+MSE_act_bay <- read.csv(file.path(here(),"Project David","ACT",paste0("MSE_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+TS_act_bay <- read.csv(file.path(here(),"Project David","ACT",paste0("TreeSize_",course,"_baygen[1,5,10]_")), header = TRUE, row.names = 1)
+
+# Smearing + weighted
+MSE_act_smr_w <- read.csv(file.path(here(),"Project David","ACT",paste0("MSE_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+TS_act_smr_w <- read.csv(file.path(here(),"Project David","ACT",paste0("TreeSize_",course,"_smearing[25%,50%]_weighted")), header = TRUE, row.names = 1)
+
+a <- MSE_act_bay_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_ACT_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_act_bay_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "MSE")
 
-TS_ACT_w %>% 
-  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(TS_ACT_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+b <- TS_act_bay_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_act_bay_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + Weighted", subtitle = "Tree Size")
 
-MSE_ACT %>% 
+c <- MSE_act_bay %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_act_bay)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "MSE")
 
-TS_ACT %>% 
+d <- TS_act_bay %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_act_bay)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Baysian + NOT Weighted", subtitle = "Tree Size")
+
+e <- MSE_act_smr_w %>% 
   pivot_longer(cols = colnames(.), names_to = "Function", values_to = "MSE") %>% 
-  ggplot(., aes(x = factor(Function, levels = colnames(MSE_saf_w)), y = MSE)) +
-  geom_jitter() +
-  stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red")
+  ggplot(., aes(x = factor(Function, levels = colnames(MSE_act_smr_w)), y = MSE)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "MSE") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+f <- TS_act_smr_w %>% 
+  pivot_longer(cols = colnames(.), names_to = "Function", values_to = "Tree_Size") %>% 
+  ggplot(., aes(x = factor(Function, levels = colnames(TS_act_smr_w)), y = Tree_Size)) +
+    geom_jitter() +
+    stat_summary(fun.data = mean_sdl, geom = "pointrange", color = "red") +
+    xlab("") +
+    labs(title = "Smearing + Weighted", subtitle = "Tree Size") +
+    theme(axis.text.x = element_text(angle = -25, vjust = 0.5, hjust=0.5))
+
+tgrob <- text_grob(course,size = 20)
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,3,0,0, "cm"))
+ggarrange(NULL,plot_0,NULL,a,c,e,b,d,f, 
+          labels = c("","","","A", "B", "C", "D", "E", "F"),
+          ncol = 3, nrow = 3, heights = c(1,7,7))
 ```
 
 

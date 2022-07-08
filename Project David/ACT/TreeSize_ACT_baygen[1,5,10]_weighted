@@ -10,7 +10,7 @@
 "rep1_fold9",3,NA,9,7,5
 "rep1_fold10",8,NA,5,5,3
 "rep2_fold1",4,NA,9,6,3
-"rep2_fold2",8,NA,10,5,1
+"rep2_fold2",8,NA,12,6,1
 "rep2_fold3",5,NA,10,4,1
 "rep2_fold4",7,NA,9,4,1
 "rep2_fold5",7,NA,11,6,1
@@ -77,7 +77,7 @@
 "rep8_fold6",8,NA,10,5,1
 "rep8_fold7",6,NA,8,4,3
 "rep8_fold8",3,NA,11,4,2
-"rep8_fold9",3,NA,9,4,2
+"rep8_fold9",3,NA,9,4,5
 "rep8_fold10",8,NA,9,7,1
 "rep9_fold1",4,NA,9,6,1
 "rep9_fold2",7,NA,11,5,3

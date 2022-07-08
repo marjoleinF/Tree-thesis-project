@@ -50,10 +50,11 @@ gendata_smr <- function(data, palt = 0.5, n_gen){
       
       for(j in 1:ncol(gen_data)){
         
-        if(runif(1) <= palt){gen_data[i,j] <- sample(x = data[,j], size = 1)}
+        if(runif(1) <= palt){gen_data[i,j] <- sample(x = as.matrix(data[,j]), size = 1)}
       }
     }
   }
+  
   return(gen_data)
 }
 ```
@@ -72,26 +73,28 @@ data = read_sav(file.path(here(),"Project David","Safety.sav"))
 set.seed(42)
 nfolds <- 10
 nreps <- 10
-ngensizes <- c(1,5,10)
-palt <- c(0, 0.25, 0.5, 0.75, 1)
+ngensizes <- c(1,5)
+palts <- c(0.25, 0.5)
 tel <- 0
-use_weights <- FALSE
-baygen <- TRUE
+use_weights <- TRUE
+baygen <- FALSE
 
-
-
-tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
-
-colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
-rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
+if(baygen){
+  tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
+  colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
+  rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
+}else{
+  tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = length(ngensizes)*length(palts)))
+  colnames(tree_size) <- colnames(MSE) <- c(paste0("Smearing_N*",expand.grid(ngensizes,palts)[,1], "_palt=",expand.grid(ngensizes,palts)[,2]))
+  rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
+}
 
 system.time(
-# foreach(k = 1:nreps, .packages = (c("dbarts","glmertree"))) %dopar% {
 for (k in 1:nreps){
   
   # this block makes sure "traindat" contains every level
   levelvec <- 0
-  while(mean(levelvec) != 1) {
+  while(mean(levelvec) != 1){
     fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
     levelvec <- numeric()
       for (i in 1:nfolds){
@@ -108,44 +111,74 @@ for (k in 1:nreps){
     traindat <- data[fold_ids != i, ]
     testdat <- data[fold_ids == i, ]
     
-    # Fit a regualar GLMM tree
-    glmtree <- lmertree(unsafe ~ 1 | (1|street) | age + sex + economic + crowded,
-                     data = traindat)
-
-    pred_glmtree <- predict(glmtree, newdata = testdat)
-
-    MSE[(k-1)*10+i,1] <- mean((testdat$unsafe - pred_glmtree)^2)
-    tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+    if(baygen){
+      # Fit a regualar GLMM tree
+      glmtree <- lmertree(unsafe ~ 1 | (1|street) | age + sex + economic + crowded,
+                       data = traindat)
+  
+      pred_glmtree <- predict(glmtree, newdata = testdat)
+  
+      MSE[(k-1)*10+i,1] <- mean((testdat$unsafe - pred_glmtree)^2)
+      tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
     
-    # fit multilevel BART
-    Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
-       data = traindat, group.by = traindat$street,
-       test = testdat, group.by.test = testdat$street,
-       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
-    
-    posterior <- Mbart$yhat.train
-    
-    MSE[(k-1)*10+i,2] <- mean((testdat$unsafe - Mbart$yhat.test.mean)^2)
-    
-    # fit BaBart GLMM trees with different sizes of Ngen
-    for(ngen in ngensizes){
-
-      surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+      # fit multilevel BART
+      Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+         data = traindat, group.by = traindat$street,
+         test = testdat, group.by.test = testdat$street,
+         n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
       
-      if(use_weights){
-        babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
-                       data = surr_mlbart,
-                       weights = rep(1/ngen, times = nrow(surr_mlbart)))
-      }
-      else{
-        babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
-                       data = surr_mlbart)
-      }
-      pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
+      posterior <- Mbart$yhat.train
       
-      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
-      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+      MSE[(k-1)*10+i,2] <- mean((testdat$unsafe - Mbart$yhat.test.mean)^2)
+    
     }
+    # fit BaBart GLMM trees with different sizes of Ngen using Baygen
+      for(ngen in ngensizes){
+        
+        if(baygen){
+          surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+          
+  
+          if(use_weights){
+            babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                           data = surr_mlbart,
+                           weights = rep(1/ngen, times = nrow(surr_mlbart)))
+          }
+          else{
+            babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                           data = surr_mlbart)
+          }
+          pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
+          MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
+          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+        }
+        else{
+          for(palt in palts){
+            surr_mlbart <- gendata_smr(traindat, palt, ngen * nrow(traindat))
+            
+            Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+                              data = surr_mlbart, group.by = surr_mlbart$street,
+                              n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+            
+            y_gen <- Mbart$yhat.train.mean
+            
+            surr_mlbart <- cbind(surr_mlbart, y_gen)
+            
+            if(use_weights){
+              babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                             data = surr_mlbart,
+                             weights = rep(1/ngen, times = nrow(surr_mlbart)))
+            }
+            else{
+              babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                             data = surr_mlbart)
+            }
+            pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
+            MSE[(k-1)*10+i,match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
+            tree_size[(k-1)*10+i,match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
+          }
+        }
+      }
     tel <- tel + 1
     print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
   }
@@ -158,10 +191,10 @@ Save/Load data
 
 ```{r}
 # save MSE as CSV
-write.csv(x = MSE, file = paste("MSE","Safety",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+write.csv(x = MSE, file = paste("MSE","Safety",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palts*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
 
 # save tree_size as CSV
-write.csv(x = tree_size, file = paste("TreeSize","Safety",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palt*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+write.csv(x = tree_size, file = paste("TreeSize","Safety",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palts*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
 ```
 
 
