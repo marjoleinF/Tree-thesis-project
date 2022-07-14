@@ -1,0 +1,337 @@
+---
+title: "Partitioning treatment trajectories"
+author: "Marjolein Fokkema"
+output: pdf_document
+---
+
+We have three clinician-reported response variables that were assessed over time: CGI1 and CGI2 (Clinical Global Impression) and GAF (General Assessment of Functioning). We will partition the datasets based on a linear-mixed effects model (LMM) using function `lmertree`, and based on a (non-linear) generalized additive model (GAM).
+
+First, we load libraries and data:
+
+```{r, warning = FALSE, message = FALSE}
+## Load libraries
+library("foreign")
+library("glmertree")
+library("gamtree")
+
+## Read data
+CGI1 <- read.spss("PP5_ITT_manova_v10_observed_MLwiN_CGI1_ED20120314.sav", 
+                 to.data.frame = TRUE)
+CGI2 <- read.spss("PP5_ITT_manova_v10_observed_MLwiN_CGI2_ED20120314.sav", 
+                  to.data.frame = TRUE)
+GAF <- read.spss("PP5_ITT_manova_v10_observed_MLwiN_GAF_ED20120314.sav",
+                 to.data.frame = TRUE)
+```
+
+## CGI1 analyses
+
+```{r}
+CGI1[CGI1 == -9999] <- NA
+CGI1$dem1[CGI1$dem1 == "-9999"] <- NA
+CGI1 <- CGI1[!is.na(CGI1$CGI1), ]
+#sapply(CGI1, function(x) table(is.na(x)))
+##
+## cluster id: "nummer"
+## time indicator: "time"
+## response: "CGI1"
+##
+## additional random effect: "loc", "ptherapeut"
+## I have excluded loc, because there are only three levels, and including loc
+## as a random effect often yields convergence and/or singularity warnings.
+## Beause ptherapeut is nested within loc, random effect of ptherapeut already
+## accounts for loc.
+##
+## treatment indicators: "RAND2"           
+## partitioning variables (patient): "leeftijd", "sexe", "dem1", "dem2", "dem3", 
+## "dem4", "dem5", "dem6", "dem6A", "dem7", "dem8", "dem9", "dem10", "midy13b", 
+## "HDRSabove24"
+##
+## veel missings: "dem11", "dem12", "dem13", "dem13A", "dem13B", "midy13a", "ps", 
+## "dimtot", "tic21", "mide25", "mide26b", "mide29"          
+##
+## partitioning variables (psychotherapeut): "ptherapeut", "pt_fctcat", 
+## "pt_fctcat2", "pt_sekse", "pt_leeftijd", "pt_ervaring", "pt_completer", 
+## "pt_zittingen", "pt_reden", "pt_eind", "ftherapeut"     
+##
+## Erg veel missings: "ft_completer", "ft_reden", "ft_eind", "ftadditie_code", 
+## "ftadditie_momt",  "ftadditie_start" 
+##
+vars <- c("nummer", "time", "CGI1", "loc", "ptherapeut", "RAND2", "leeftijd", 
+          "sexe", "dem1", "dem2", "dem3", "dem4", "dem5", "dem6", "dem6A", 
+          "dem7", "dem8", "dem9", "dem10", "midy13b", "HDRSabove24")
+CGI1 <- CGI1[ , vars]
+CGI1 <- CGI1[complete.cases(CGI1),]
+CGI1$time <- factor(CGI1$time)
+levels(CGI1$time) <- gsub("cgi1_", "", levels(CGI1$time))
+CGI1$time <- as.numeric(as.character(CGI1$time)) - 1
+CGI1[ , sapply(CGI1, is.factor)] <- lapply(CGI1[ , sapply(CGI1, is.factor)], factor)
+CGI1$nummer <- factor(CGI1$nummer)
+#summary(CGI1)
+```
+
+Fit the trees:
+
+```{r, eval= FALSE}
+ltCGI1 <- lmertree(CGI1 ~ time | (1 | ptherapeut/nummer) | 
+                     RAND2 + leeftijd + sexe + dem1 + dem2 + dem3 + dem4 + 
+                     dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + dem10 + 
+                     midy13b + HDRSabove24, data = CGI1, cluster = nummer)
+save(ltCGI1, file = "ltCGI1")
+```
+
+```{r}
+load("ltCGI1")
+plot(ltCGI1, which = "tree", fitted = "marginal", gp = gpar(cex = .6))
+plot(ltCGI1, which = "tree.coef")
+plot(ltCGI1, which = "random")
+VarCorr(ltCGI1)
+```
+
+```{r, eval = FALSE}
+table(CGI1$ptherapeut, CGI1$nummer)
+gtCGI1.1 <- gamtree(CGI1 ~ s(time) | s(ptherapeut, bs = "re") + 
+                   s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                   dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                   dem10 + midy13b + HDRSabove24, 
+                 data = CGI1, cluster = CGI1$nummer, )
+save(gtCGI1.1, file = "gtCGI1.1")
+```
+
+```{r}
+load("gtCGI1.1")
+plot(gtCGI1.1, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.4)))
+plot(gtCGI1.1, which = "nodes")
+length(gtCGI1.1$tree)
+```
+
+```{r, eval = FALSE}
+gtCGI1.2 <- gamtree(CGI1 ~ s(time) | s(ptherapeut, bs = "re") + 
+                   s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                   dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                   dem10 + midy13b + HDRSabove24, 
+                 data = CGI1, globalstart = TRUE, verbose = FALSE)
+save(gtCGI1.2, file = "gtCGI1.2")
+```
+
+```{r}
+load("gtCGI1.2")
+#plot(gtCGI1.2, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.6)))
+#plot(gtCGI1.2, which = "nodes")
+length(gtCGI1.2$tree)
+```
+
+```{r, eval = FALSE}
+gtCGI1.3 <- gamtree(CGI1 ~ s(time) | s(ptherapeut, bs = "re") + 
+                   s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                   dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                   dem10 + midy13b + HDRSabove24, 
+                 data = CGI1, cluster = CGI1$nummer, globalstart = TRUE)
+save(gtCGI1.3, file = "gtCGI1.3")
+```
+
+```{r}
+load("gtCGI1.3")
+#plot(gtCGI1.3, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.6)))
+#plot(gtCGI1.3, which = "nodes")
+length(gtCGI1.3$tree)
+```
+
+LMM trees yield the lowest number of splits. GAM trees yield a higher number of splits when initializing estimation with the (globally speicifed) random effects and not using the `cluster` argument. For GAM trees, initialization does not matter when the `cluster` argument is employed.
+
+
+
+
+
+# CGI2 analyses
+
+```{r}
+CGI2[CGI2 == -9999] <- NA
+CGI2$dem1[CGI2$dem1 == "-9999"] <- NA
+CGI2 <- CGI2[!is.na(CGI2$CGI2), ]
+#sapply(CGI2, function(x) table(is.na(x)))
+vars <- c("nummer", "time", "CGI2", "loc", "ptherapeut", "RAND2", "leeftijd", 
+          "sexe", "dem1", "dem2", "dem3", "dem4", "dem5", "dem6", "dem6A", 
+          "dem7", "dem8", "dem9", "dem10", "midy13b", "HDRSabove24")
+CGI2 <- CGI2[ , vars]
+CGI2 <- CGI2[complete.cases(CGI2),]
+CGI2$time <- factor(CGI2$time)
+levels(CGI2$time) <- gsub("cgi2_", "", levels(CGI2$time))
+CGI2$time <- as.numeric(as.character(CGI2$time))
+CGI2[ , sapply(CGI2, is.factor)] <- lapply(CGI2[ , sapply(CGI2, is.factor)], factor)
+CGI2$nummer <- factor(CGI2$nummer)
+#summary(CGI2)
+```
+
+We fit the trees:
+
+```{r, eval = FALSE}
+ltCGI2 <- lmertree(CGI2 ~ time | (1 | ptherapeut/nummer) | 
+                     RAND2 + leeftijd + sexe + dem1 + dem2 + dem3 + dem4 + 
+                     dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + dem10 + 
+                     midy13b + HDRSabove24, 
+                   data = CGI2, cluster = nummer)
+save(ltCGI2, file = "ltCGI2")
+```
+
+```{r}
+load("ltCGI2")
+plot(ltCGI2, which = "tree", fitted = "marginal", gp = gpar(cex=.6))
+plot(ltCGI2, which = "ranef")
+plot(ltCGI2, which = "tree.coef")
+VarCorr(ltCGI2)
+```
+
+````{r, eval = FALSE}
+gtCGI2.1 <- gamtree(CGI2 ~ s(time) | s(ptherapeut, bs = "re") + 
+                      s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                      dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                      dem10 + midy13b + HDRSabove24, 
+                    data = CGI2, cluster = CGI2$nummer, verbose = FALSE)
+save(gtCGI2.1, file = "gtCGI2.1")
+```
+
+```{r}
+load("gtCGI2.1")
+plot(gtCGI2.1, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.4)))
+plot(gtCGI2.1, which = "nodes")
+length(gtCGI2.1$tree)
+```
+
+````{r, eval = FALSE}
+gtCGI2.2 <- gamtree(CGI2 ~ s(time) | s(ptherapeut, bs = "re") + 
+                      s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                      dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                      dem10 + midy13b + HDRSabove24, 
+                    data = CGI2, globalstart = TRUE, verbose = FALSE)
+save(gtCGI2.2, file = "gtCGI2.2")
+```
+
+```{r}
+load("gtCGI2.2")
+#plot(gtCGI2.2, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.6)))
+#plot(gtCGI2.2, which = "nodes")
+length(gtCGI2.2$tree)
+```
+
+```{r, eval = FALSE}
+gtCGI2.3 <- gamtree(CGI2 ~ s(time) | s(ptherapeut, bs = "re") + 
+                      s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                      dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                      dem10 + midy13b + HDRSabove24, 
+                    data = CGI2, cluster = CGI2$nummer, globalstart = TRUE,
+                    verbose = FALSE)
+save(gtCGI2.3, file = "gtCGI2.3")
+```
+
+```{r}
+load("gtCGI2.3")
+#plot(gtCGI2.3, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.6)))
+#plot(gtCGI2.3, which = "nodes")
+length(gtCGI2.3$tree)
+```
+
+LMM trees yield the lowest number of splits. GAM trees yield a higher number of splits when initializing estimation with the (globally speicifed) random effects and not using the `cluster` argument. For GAM trees, initialization does not matter when the `cluster` argument is employed.
+
+
+# GAF analyses
+
+```{r}
+GAF[GAF == -9999] <- NA
+GAF$dem1[GAF$dem1 == "-9999"] <- NA
+GAF <- GAF[!is.na(GAF$GAF), ]
+#sapply(GAF, function(x) table(is.na(x)))
+vars <- c("nummer", "time", "GAF", "loc", "ptherapeut", "RAND2", "leeftijd", 
+          "sexe", "dem1", "dem2", "dem3", "dem4", "dem5", "dem6", "dem6A", 
+          "dem7", "dem8", "dem9", "dem10", "midy13b", "HDRSabove24")
+GAF <- GAF[ , vars]
+GAF <- GAF[complete.cases(GAF),]
+GAF$time <- factor(GAF$time)
+levels(GAF$time) <- gsub("gaf_", "", levels(GAF$time))
+GAF$time <- as.numeric(as.character(GAF$time))
+GAF[ , sapply(GAF, is.factor)] <- lapply(GAF[ , sapply(GAF, is.factor)], factor)
+GAF$nummer <- factor(GAF$nummer)
+#summary(GAF)
+```
+
+We fit the trees:
+
+```{r, eval = FALSE}
+ltGAF <- lmertree(GAF ~ time | (1 | ptherapeut/nummer) | 
+                     RAND2 + leeftijd + sexe + dem1 + dem2 + dem3 + dem4 + 
+                     dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + dem10 + 
+                     midy13b + HDRSabove24, 
+                   data = GAF, cluster = nummer)
+save(ltGAF, file = "ltGAF")
+```
+
+```{r}
+load("ltGAF")
+plot(ltGAF, which = "tree", fitted = "marginal", gp = gpar(cex=.4))
+plot(ltGAF, which = "tree.coef")
+plot(ltGAF, which = "ranef")
+VarCorr(ltGAF)
+length(ltGAF$tree)
+```
+
+```{r, eval = FALSE}
+gtGAF.1 <- gamtree(GAF ~ s(time) | s(ptherapeut, bs = "re") + 
+                      s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                      dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                      dem10 + midy13b + HDRSabove24, 
+                    data = GAF, cluster = GAF$nummer, verbose = FALSE)
+save(gtGAF.1, file = "gtGAF.1")
+```
+
+```{r}
+load("gtGAF.1")
+plot(gtGAF.1, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.6)))
+plot(gtGAF.1, which = "nodes")
+length(gtGAF.1$tree)
+```
+
+```{r, eval = FALSE}
+gtGAF.2 <- gamtree(GAF ~ s(time) | s(ptherapeut, bs = "re") + 
+                      s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                      dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                      dem10 + midy13b + HDRSabove24, 
+                    data = GAF, globalstart = TRUE, verbose = FALSE)
+save(gtGAF.2, file = "gtGAF.2")
+```
+
+```{r}
+load("gtGAF.2")
+#plot(gtGAF.2, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.6)))
+#plot(gtGAF.2, which = "nodes")
+length(gtGAF.2$tree)
+```
+
+```{r, eval = FALSE}
+gtGAF.3 <- gamtree(GAF ~ s(time) | s(ptherapeut, bs = "re") + 
+                      s(nummer, bs = "re") | RAND2 + leeftijd + sexe + dem1 + dem2 + 
+                      dem3 + dem4 + dem5 + dem6 + dem6A + dem7 + dem8 + dem9 + 
+                      dem10 + midy13b + HDRSabove24, 
+                    data = GAF, cluster = GAF$nummer, globalstart = TRUE,
+                   verbose = FALSE)
+save(gtGAF.3, file = "gtGAF.3")
+```
+
+```{r, eval = FALSE}
+load("gtGAF.3")
+#plot(gtGAF.3, which = "tree", treeplot_ctrl = list(gp = gpar(cex=.6)))
+#plot(gtGAF.3, which = "nodes")
+length(gtGAF.3$tree)
+```
+
+Again: LMM trees yield the lowest number of splits. GAM trees yield a higher number of splits when initializing estimation with the (globally specified) random effects and not using the `cluster` argument. For GAM trees, initialization does not seem to matter when the `cluster` argument is employed.
+
+``
+
+LMM trees are more accurate than GAM trees `CGI2` data, GAM trees more accurate on `CGI1` and `GAF` data. Furthermore, higher MSEs also have higher standard error. 
+
+```{r}
+cbind(M_tree_size = sort(sapply(tree_sizes, mean)), 
+      SE_tree_size = sort(sapply(tree_sizes, sd))[order(sapply(tree_sizes, mean))] /
+        sqrt(nrow(MSEs)))
+```
+
+LMM trees are more sparse on `CGI2`, GAM trees more sparse on `CGI1` and `GAF`. GAM trees have larger standard error of tree size on all three datasets. Thus, it appears that sparsest method is also most accurate, and GAM tree has higher tree size variablity.

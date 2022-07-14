@@ -1,0 +1,7 @@
+score ~ 1 | (1 | PIDNUM) | months + .... ,
+	cluster = PIDNUM
+
+	misschien nog melden
+	eerst checken of BART uberhaupt beter is dan de GLMM tree!
+
+	misschien werkt smearen wel als je smeart tussen clusters
