@@ -1,0 +1,328 @@
+---
+title: "Born Again and Bayesian tree approaches"
+author: "Marjolein Fokkema"
+date: "17-7-2022"
+output: pdf_document
+---
+
+Many have found artificial data-generation effective to improve the performance of more simple / unstable models.
+
+Instability generally reduced with larger sample size and higher signal-to-noise ratio. 
+
+By using accurate black-box, can generate data with 
+
+
+
+How to generate $X$?
+
+1: Keep X exactly as is ($N_{gen} = 1$. 
+2: Randomly permute subset of values (smearing)
+3: Simply repeat observed data
+
+How to generate $Y$?
+
+1: Deterministic, given $X_{gen}$.
+2: From Bayesian posterior distribution.
+
+
+What works: 
+
+Born-again approach for treatment effects, without permuting $X$.
+
+Born-again approach for safety data.
+
+What does not work:
+
+Born-again approach for longitudinal datasets; ECLSK, ACT.
+
+
+```{r}
+## Bayesian data generation function
+## Returns X_gen, y_gen
+gendata_bay <- function(data, PPD, ngen) {
+  
+  if (nrow(data) != ncol(PPD)) 
+    stop("Amount of observations in PPD is different from data")
+  
+  index_gen <- sample.int(n = nrow(data), size = ngen*nrow(data), replace = TRUE)
+  x_gen <- data[index_gen, ]
+  
+  ## Posterior Predictive Distribution has 2000 rows (default) and nobs columns
+  ## Thus, for each bootstrap sampled row, selected correspdonding column
+  ## and sample a random value from that posterior
+  y_gen <- sapply(index_gen, function(i) sample(x = PPD[ , i], size = 1))
+  
+  return(cbind(x_gen, y_gen))
+}
+
+
+## Smearing data generation function
+## Returns X_gen only
+gendata_smr <- function(data, palt = 0.5, ngen) {
+
+  if (palt < 0 | palt > 1) stop("palt must be bound between between 0 and 1")
+  
+  index_gen <- sample.int(n = nrow(data), size = ngen*nrow(data), replace = TRUE)
+  gen_data <- data[index_gen, ]
+  
+  ## With probability palt, replace value in X_gen with random sample from 
+  ## corresponding column
+  if (palt != 0) {
+    for (i in 1:nrow(gen_data)) {
+      for (j in 1:ncol(gen_data)) {
+        if (rbinom(n = 1, size = 1, prob = palt)) { 
+          gen_data[i, j] <- sample(x = data[ , j], size = 1)
+        }
+      }
+    }
+  }
+  return(gen_data)
+}
+```
+
+
+# Replicate Breiman analyses
+
+Datasets analysed by Breiman:
+
+Classification: breast cancer, ionosphere, glass, soybean, sonar
+
+Regression: Boston Housing, Ozone, Friedman #1, #2, #3 (200 train, 2000 test)
+
+## Boston Housing
+
+```{r, eval=FALSE}
+library("glmertree")
+library("dbarts")
+library("mlbench")
+
+data(BostonHousing)
+data <- BostonHousing
+
+nfolds <- 10
+nreps <- 10
+ngensizes <- c(1, 5, 10)
+palts <- c(0, 0.25, 0.5, 1.0)
+
+## Create objects for saving results (MSE for Bayesian approach, MSE2 for Breiman approach)
+MSE <- data.frame(matrix(data = NA, nrow = nfolds*nreps, 
+                         ncol = 3 + length(ngensizes) + length(ngensizes)*length(palts)))
+BaSmear_design <- expand.grid(ngensizes, palts)
+colnames(BaSmear_design) <- c("ngen", "palt")
+colnames(MSE) <- c("GLMM_tree", "Bart", "Ba", 
+                   paste0("BaBayes_N=", ngensizes),
+                   paste0("BaSmear_N=", BaSmear_design[ , 1], "_palt=", BaSmear_design[ , 2]))
+rownames(MSE) <- paste0("rep", sort(rep(1:nreps, times = nfolds)), "_fold", rep(1:nfolds, times = nreps))
+#MSE <- MSE[ , -which(is.na(colnames(MSE)))]
+tree_size <- MSE
+
+set.seed(42)
+for (k in 1:nreps) {
+    
+  ## Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+  
+  for (i in 1:nfolds) {
+    
+    ## Select train and test data
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    ## Fit regular GLMM tree
+    gt <- lmtree(medv ~ 1 | ., data = traindat)
+    pred_gt <- predict(gt, newdata = testdat)
+    MSE[(k-1)*10+i, 1] <- mean((testdat$medv - pred_gt)^2)
+    tree_size[(k-1)*10+i, 1] <- (length(gt)-1)/2
+
+    
+    ## 1) Fit (and evaluate) BART
+    ## 2) Generate surrogate data
+    ## 3) Fit and evaluate tree fitted to surrogate data
+    
+    ## Fit Bayesian born-again approach
+    ##
+    brt <- bart2(medv ~ ., data = traindat, test = testdat, n.trees = 100, 
+                 combineChains = TRUE, verbose = FALSE)
+    MSE[(k-1)*10+i, 2] <- mean((testdat$medv - brt$yhat.test.mean)^2)
+    surr_dat <- traindat
+    surr_dat$medv <- brt$yhat.train.mean
+    ba_gt <- lmtree(medv ~ 1 | ., data = surr_dat)
+    pred_babart <- predict(ba_gt, newdata = testdat)
+    MSE[(k-1)*10+i, 3] <- mean((testdat$medv - pred_babart)^2)
+    tree_size[(k-1)*10+i, 3] <- (length(ba_gt)-1)/2
+    
+    posterior <- brt$yhat.train
+    for (ngen in ngensizes) {
+      surr_dat <- gendata_bay(data = traindat, PPD = posterior, ngen = ngen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - medv, data = surr_dat,
+                      weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      MSE[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean((testdat$medv - pred_babart)^2)
+      tree_size[(k-1)*10+i, 3+match(ngen, ngensizes)] <- (length(ba_gt)-1)/2
+    }
+       
+    ## Fit Breiman born-again approach
+    ##
+    for (ngen_palt in 1:nrow(BaSmear_design)) {
+      palt <- BaSmear_design$palt[ngen_palt]
+      ngen <- BaSmear_design$ngen[ngen_palt]
+      surr_dat <- gendata_smr(data = traindat, palt = palt, ngen = ngen)
+      brt <- bart2(medv ~ ., data = traindat, test = surr_dat, verbose = FALSE,
+                   n.trees = 100, combineChains = TRUE)
+      y_gen <- brt$yhat.test.mean
+      surr_dat <- cbind(surr_dat, y_gen)
+      ba_gt <- lmtree(y_gen ~ 1 | . -medv, data = surr_dat,
+                       weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      MSE[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
+        mean((testdat$medv - pred_babart)^2)
+      tree_size[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
+        (length(ba_gt)-1)/2
+    }
+    
+    print(paste0("Finished fold ", i, " of repetition ", k))
+  }
+}
+save(MSE, file = "BostonHousing MSE.Rda")
+save(tree_size, file = "BostonHousing tree_size.Rda")
+``` 
+
+```{r}
+load(file = "BostonHousing MSE.Rda")
+load(file = "BostonHousing tree_size.Rda")
+boxplot(MSE)
+colMeans(MSE)
+which.min(colMeans(MSE[ , -2]))
+sapply(MSE, sd)
+boxplot(tree_size)
+colMeans(tree_size)
+sapply(tree_size, sd)
+```
+
+
+## Ozone
+
+```{r}
+library("glmertree")
+library("dbarts")
+library("mlbench")
+library("partykit")
+
+data(Ozone)
+sapply(Ozone, function(x) table(is.na(x)))
+data <- Ozone[ , -9]
+data <- na.omit(data)
+
+nfolds <- 10
+nreps <- 10
+ngensizes <- c(1, 5, 10)
+palts <- c(0, 0.25, 0.5, 1.0)
+
+## Create objects for saving results (MSE for Bayesian approach, MSE2 for Breiman approach)
+MSE <- data.frame(matrix(data = NA, nrow = nfolds*nreps, 
+                         ncol = 3 + length(ngensizes) + length(ngensizes)*length(palts)))
+BaSmear_design <- expand.grid(ngensizes, palts)
+colnames(BaSmear_design) <- c("ngen", "palt")
+colnames(MSE) <- c("GLMM_tree", "Bart", "Ba", 
+                   paste0("BaBayes_N=", ngensizes),
+                   paste0("BaSmear_N=", BaSmear_design[ , 1], "_palt=", BaSmear_design[ , 2]))
+rownames(MSE) <- paste0("rep", sort(rep(1:nreps, times = nfolds)), "_fold", rep(1:nfolds, times = nreps))
+#MSE <- MSE[ , -which(is.na(colnames(MSE)))]
+tree_size <- MSE
+
+set.seed(42)
+for (k in 1:nreps) {
+    
+  ## Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+  
+  for (i in 1:nfolds) {
+    
+    ## Select train and test data
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    ## Fit regular GLMM tree
+    gt <- lmtree(V4 ~ 1 | ., data = traindat)
+    pred_gt <- predict(gt, newdata = testdat)
+    MSE[(k-1)*10+i, 1] <- mean((testdat$V4 - pred_gt)^2)
+    tree_size[(k-1)*10+i, 1] <- (length(gt)-1)/2
+    
+    ## 1) Fit (and evaluate) BART
+    ## 2) Generate surrogate data
+    ## 3) Fit and evaluate tree fitted to surrogate data
+    
+    ## Fit Bayesian born-again approach
+    brt <- bart2(V4 ~ ., data = traindat, test = testdat, n.trees = 100, 
+                 combineChains = TRUE, verbose = FALSE)
+    MSE[(k-1)*10+i, 2] <- mean((testdat$V4 - brt$yhat.test.mean)^2)
+    surr_dat <- traindat
+    surr_dat$V4 <- brt$yhat.train.mean
+    ba_gt <- lmtree(V4 ~ 1 | ., data = surr_dat)
+    pred_babart <- predict(ba_gt, newdata = testdat)
+    MSE[(k-1)*10+i, 3] <- mean((testdat$V4 - pred_babart)^2)
+    tree_size[(k-1)*10+i, 3] <- (length(ba_gt)-1)/2
+    posterior <- brt$yhat.train
+    for (ngen in ngensizes) {
+      surr_dat <- gendata_bay(data = traindat, PPD = posterior, ngen = ngen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - V4, data = surr_dat,
+                      weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      MSE[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean((testdat$V4 - pred_babart)^2)
+      tree_size[(k-1)*10+i, 3+match(ngen, ngensizes)] <- (length(ba_gt)-1)/2
+    }
+       
+    ## Fit Breiman born-again approach
+    for (ngen_palt in 1:nrow(BaSmear_design)) {
+      palt <- BaSmear_design$palt[ngen_palt]
+      ngen <- BaSmear_design$ngen[ngen_palt]
+      surr_dat <- gendata_smr(data = traindat, palt = palt, ngen = ngen)
+      brt <- bart2(V4 ~ ., data = traindat, test = surr_dat, verbose = FALSE,
+                   n.trees = 100, combineChains = TRUE)
+      y_gen <- brt$yhat.test.mean
+      surr_dat <- cbind(surr_dat, y_gen)
+      ba_gt <- lmtree(y_gen ~ 1 | . -V4, data = surr_dat,
+                       weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      MSE[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
+        mean((testdat$V4 - pred_babart)^2)
+      tree_size[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
+        (length(ba_gt)-1)/2
+    }
+    
+    print(paste0("Finished fold ", i, " of repetition ", k))
+  }
+}
+save(MSE, file = "Ozone MSE.Rda")
+save(tree_size, file = "Ozone tree_size.Rda")
+``` 
+
+```{r}
+load(file = "Ozone MSE.Rda")
+load(file = "Ozone tree_size.Rda")
+boxplot(MSE)
+colMeans(MSE)
+which.min(colMeans(MSE[ , -2]))
+sapply(MSE, sd)
+boxplot(tree_size)
+colMeans(tree_size)
+sapply(tree_size, sd)
+```
+
+## Friedman
+
+```{r}
+library("dbarts")
+library("mlbench")
+
+data(BostonHousing)
+data <- BostonHousing
+#Ozone
+#mlbench.friedman1(200)
+```
+
+# Clustered data that is not repeated measures:
+
+https://uclspp.github.io/POLS0010/7-multilevel-regression-and-post-stratification-mrp.html
