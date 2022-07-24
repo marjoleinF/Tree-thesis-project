@@ -122,10 +122,11 @@ for (k in 1:nreps) {
     
     ## Fit Bayesian born-again approach
     ##
-    brt <- bart(x.train = train_x, y.train = train_y, x.test = test_x, 
+    brt <- rbart(x.train = train_x, y.train = train_y, x.test = test_x, 
                 ntree = 100, combinechains = TRUE, verbose = FALSE)
     brt_test_preds <- binomial()$linkinv(colMeans(brt$yhat.test))
     brt_train_preds <- binomial()$linkinv(colMeans(brt$yhat.train))
+    
     MSE[(k-1)*10+i, 2] <- mean((test_y - brt_test_preds)^2)
     acc[(k-1)*10+i, 2] <- mean(test_y - brt_test_preds > .5)
     surr_dat <- traindat

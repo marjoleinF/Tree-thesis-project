@@ -5,7 +5,9 @@ date: "20-7-2022"
 output: pdf_document
 ---
 
-# Boston Housing
+# Regression
+
+## Boston Housing
 
 ```{r, fig.height = 3}
 library("mlbench")
@@ -74,7 +76,7 @@ ggplot(size_long) +
 ```
 
 
-# Ozone
+## Ozone
 
 ```{r, fig.height = 3}
 ## Compute intercorrelation
@@ -85,6 +87,7 @@ sum(cor(sapply(Ozone[ , -c(9L, 13L)], function(x)
 
 load(file = "Ozone MSE.Rda")
 load(file = "Ozone tree_size.Rda")
+table(is.na(MSE))
 
 sapply(MSE, function(x) table(is.na(x))) 
 #boxplot(MSE)
@@ -145,7 +148,7 @@ ggplot(size_long) +
 
 
 
-# Friedman
+## Friedman
 
 
 ```{r, fig.height=3}
@@ -215,7 +218,9 @@ ggplot(size_long) +
 ```
 
 
-# Breast cancer
+# Classification
+
+## Breast cancer
 
 ```{r, fig.height = 3}
 ## Compute intercorrelation
@@ -286,7 +291,7 @@ ggplot(size_long) +
 
 
 
-# Ionosphere
+## Ionosphere
 
 ```{r, fig.height = 3}
 
@@ -361,7 +366,7 @@ ggplot(size_long) +
 
 
 
-# Sonar
+## Sonar
 
 ```{r, fig.height = 3}
 ## Compute intercorrelation
@@ -426,7 +431,10 @@ ggplot(size_long) +
   facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "# of splits") + 
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
-
-
-
 ```
+
+
+# Clustered
+
+
+

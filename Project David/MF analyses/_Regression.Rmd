@@ -450,6 +450,3 @@ colMeans(tree_size)
 sapply(tree_size, sd)
 ```
 
-# Clustered data that is not repeated measures:
-
-https://uclspp.github.io/POLS0010/7-multilevel-regression-and-post-stratification-mrp.html
