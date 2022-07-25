@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Born-again approaches on clustered / multilevel datasets"
 author: "Marjolein Fokkema"
 date: "22-7-2022"
 output: pdf_document
@@ -172,7 +172,7 @@ for (k in 1:nreps) {
 
 
 
-## Support of gay rights 
+## Support of gay marriage 
 
 Data obtained from https://uclspp.github.io/POLS0010/7-multilevel-regression-and-post-stratification-mrp.html
 
@@ -250,10 +250,9 @@ for (k in 1:nreps) {
   fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
                      size = nrow(data), replace = FALSE)
   
-    for (i in 1:nfolds) {
+  for (i in 1:nfolds) {
 
     ## Select train and test data
-      
     ## To reduce comp. time, we select 1 fold for training and 9 for testing
     traindat <- data[fold_ids == i, ]
     testdat <- data[fold_ids != i, ]
@@ -299,7 +298,7 @@ for (k in 1:nreps) {
     ba_gt <- lmertree(marriage ~ 1 | (1|state) | female + age_cat + edu_cat + 
                         p_evang + kerry_04, 
                       data = surr_dat)
-    pred_babart <- predict(ba_gt, newdata = testdat)
+    pred_babart <- predict(ba_gt, newdata = testdat, re.form = ~0)
     MSE[(k-1)*10+i, 3] <- mean((test_y - pred_babart)^2)
     tree_size[(k-1)*10+i, 3] <- (length(ba_gt)-1)/2
     posterior <- binomial()$linkinv(brt$yhat.train)
@@ -329,6 +328,7 @@ for (k in 1:nreps) {
       ba_gt <- lmertree(y_gen ~ 1 | (1|state) | female + age_cat + edu_cat + p_evang + kerry_04, 
                         data = surr_dat, weights = rep(1/ngen, times = nrow(surr_dat)))
       pred_babart <- predict(ba_gt, newdata = testdat, re.form = ~0)
+      palt <- BaSmear_design$palt[ngen_palt]
       MSE[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
         mean((test_y - pred_babart)^2)
       tree_size[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
@@ -355,6 +355,7 @@ load("Math ability data.Rdata")
 data <- mathdata
 data$CHILDID <- factor(data$CHILDID)
 data$GENDER <- factor(data$GENDER)
+var(data$score)
 
 nfolds <- 128
 nreps <- 1
@@ -363,34 +364,29 @@ palts <- c(0, 0.25, 0.5)
 
 ## Create objects for saving results
 MSE <- data.frame(matrix(data = NA, nrow = nfolds*nreps, 
-                         ncol = 3 + length(ngensizes) + length(ngensizes)*length(palts)))
+                         ncol = 3 + length(ngensizes) + length(ngensizes)*length(palts) + 1))
 BaSmear_design <- expand.grid(ngensizes, palts)
 colnames(BaSmear_design) <- c("ngen", "palt")
 colnames(MSE) <- c("GLMM_tree", "Bart", "Ba", 
                    paste0("BaBayes_N=", ngensizes),
-                   paste0("BaSmear_N=", BaSmear_design[ , 1], "_palt=", BaSmear_design[ , 2]))
+                   paste0("BasSmear_N=", BaSmear_design[ , 1], "_palt=", BaSmear_design[ , 2]),
+                   "GLMM_tree(time)")
 rownames(MSE) <- paste0("rep", sort(rep(1:nreps, times = nfolds)), "_fold", rep(1:nfolds, times = nreps))
-#MSE <- MSE[ , -which(is.na(colnames(MSE)))]
 tree_size <- MSE
 
 set.seed(42)
 
 for (k in 1:nreps) {
-    
-  ## Generate train-test splits
-  child_ids <- sample(unique(data$CHILDID), 200)
-  
-  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
-                     size = nrow(data), replace = FALSE)
-  
+
     for (i in 1:nfolds) {
 
     ## Select train and test data
-    traindat <- data[fold_ids == i, ]
-    testdat <- data[fold_ids != i, ]
+    child_ids <- sample(unique(data$CHILDID), 200)
+    traindat <- data[data$CHILDID %in% child_ids, ]
+    testdat <- data[!data$CHILDID %in% child_ids, ]
 
     ## Check whether all factor levels in test are also in train, else move obs.
-    for (fact in c("CHILDID")) {
+    for (fact in c("RACE")) {
       levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
       if (!all(levs)) {
         traindat <- rbind(traindat, 
@@ -402,70 +398,88 @@ for (k in 1:nreps) {
     }
 
     ## Fit regular GLMM tree
-    gt <- lmertree(score ~ 1 | (1|CHILDID) | GENDER + RACE + WKSESL + C1GMOTOR + 
+    gt <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
                       C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                      P1FIRKDG + AGEBASELINE, data = traindat)
+                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
     gt_pred <- predict(gt, newdata = testdat, re.form = ~0)
-    MSE[(k-1)*10+i, 1] <- mean((test_y - gt_pred)^2)
-    tree_size[(k-1)*10+i, 1] <- (length(gt)-1)/2
+    MSE[(k-1)*10+i, 1] <- mean((testdat$score - gt_pred)^2)
+    tree_size[(k-1)*10+i, 1] <- (length(gt$tree)-1)/2
+    
+    ## Fit alternative GLMM tree
+    gt <- lmertree(score ~ months | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
+    gt_pred <- predict(gt, newdata = testdat, re.form = ~0)
+    MSE[(k-1)*10+i, 16] <- mean((testdat$score - gt_pred)^2)
+    tree_size[(k-1)*10+i, 16] <- (length(gt$tree)-1)/2
     
     ## 1) Fit (and evaluate) BART
     ## 2) Generate surrogate data
     ## 3) Fit and evaluate tree fitted to surrogate data
     
     ## Fit Bayesian born-again approach
-    brt <- rbart_vi(marriage_01 ~ female + age_cat + edu_cat + p_evang + kerry_04, 
-                    data = traindat, group.by = traindat$state, 
-                    group.by.test = testdat$state,
-                    test = testdat, n.trees = 100, 
+    brt <- rbart_vi(score ~ months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = traindat,
+                    test = testdat, n.trees = 100, group.by = CHILDID,
                  combineChains = TRUE, verbose = FALSE)
-    brt_test_preds <- binomial()$linkinv(colMeans(brt$yhat.test))
-    brt_train_preds <- binomial()$linkinv(colMeans(brt$yhat.train))
-    MSE[(k-1)*10+i, 2] <- mean((test_y - brt_test_preds)^2)
+    brt_test_preds <- colMeans(brt$yhat.test)
+    brt_train_preds <- colMeans(brt$yhat.train)
+    MSE[(k-1)*10+i, 2] <- mean((testdat$score - brt_test_preds)^2)
     surr_dat <- traindat
-    surr_dat$marriage <- brt_train_preds
-    ba_gt <- lmertree(marriage ~ 1 | (1|state) | female + age_cat + edu_cat + 
-                        p_evang + kerry_04, 
-                      data = surr_dat)
-    pred_babart <- predict(ba_gt, newdata = testdat)
-    MSE[(k-1)*10+i, 3] <- mean((test_y - pred_babart)^2)
-    tree_size[(k-1)*10+i, 3] <- (length(ba_gt)-1)/2
-    posterior <- binomial()$linkinv(brt$yhat.train)
+    surr_dat$score <- brt_train_preds
+    ba_gt <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_dat, cluster = CHILDID)
+    pred_babart <- predict(ba_gt, newdata = testdat, re.form = ~0)
+    MSE[(k-1)*10+i, 3] <- mean((testdat$score - pred_babart)^2)
+    tree_size[(k-1)*10+i, 3] <- (length(ba_gt$tree)-1)/2
+    posterior <- brt$yhat.train
     for (ngen in ngensizes) {
       surr_dat <- gendata_bay(data = traindat, PPD = posterior, ngen = ngen)
-      ba_gt <- lmertree(y_gen ~1 | (1|state) | female + age_cat + edu_cat + 
-                          p_evang + kerry_04, data = surr_dat,
+      try({
+      ba_gt <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_dat,
                       weights = rep(1/ngen, times = nrow(surr_dat)))
-      pred_babart <- predict(ba_gt, newdata = testdat, re.form = ~0, type = "response")
-      MSE[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean((test_y - pred_babart)^2)
+      pred_babart <- predict(ba_gt, newdata = testdat, re.form = ~0)
+      MSE[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean((testdat$score - pred_babart)^2)
       tree_size[(k-1)*10+i, 3+match(ngen, ngensizes)] <- (length(ba_gt$tree)-1)/2
+      })
     }
        
     ## Fit Breiman born-again approach
     for (ngen_palt in 1:nrow(BaSmear_design)) {
-      palt <- BaSmear_design$palt[ngen_palt]
+      palt <- rep(BaSmear_design$palt[ngen_palt], times = ncol(data))
+      ## Do not permute cluster ID:
+      palt[1] <- 0
       ngen <- BaSmear_design$ngen[ngen_palt]
       surr_dat <- gendata_smr(data = traindat, palt = palt, ngen = ngen)
-      brt <- rbart_vi(marriage_01 ~ female + age_cat + edu_cat + p_evang + kerry_04,  
-                      data = traindat, test = surr_dat, group.by = traindat$state,
-                      group.by.test = surr_dat$state, verbose = FALSE,
-                      n.trees = 100, combineChains = TRUE)
-      y_gen <- binomial()$linkinv(colMeans(brt$yhat.test))
+      brt <- rbart_vi(score ~ months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE,  
+                      data = traindat, test = surr_dat, group.by = CHILDID,
+                      verbose = FALSE, n.trees = 100, combineChains = TRUE)
+      y_gen <- colMeans(brt$yhat.test)
       surr_dat <- cbind(surr_dat, y_gen)
-      ba_gt <- lmertree(y_gen ~ 1 | (1|state) | female + age_cat + edu_cat + p_evang + kerry_04, 
+      try({
+      ba_gt <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
                         data = surr_dat, weights = rep(1/ngen, times = nrow(surr_dat)))
       pred_babart <- predict(ba_gt, newdata = testdat, re.form = ~0)
+      palt <- BaSmear_design$palt[ngen_palt]
       MSE[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
-        mean((test_y - pred_babart)^2)
+        mean((testdat$score - pred_babart)^2)
       tree_size[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <- 
         (length(ba_gt$tree)-1)/2
+      })
     }
     print(paste0("Finished fold ", i, " of repetition ", k))
-    save(MSE, file = "Marriage MSE.Rda")
-    save(tree_size, file = "Marriage tree_size.Rda")
+    save(MSE, file = "ECLSK Math MSE.Rda")
+    save(tree_size, file = "ECLSK Math tree_size.Rda")
   }
 }
-
 ```
 
 

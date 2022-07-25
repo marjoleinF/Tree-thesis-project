@@ -1,18 +1,57 @@
 ---
-title: "Plots"
+title: "Results and plots"
 author: "Marjolein Fokkema"
 date: "20-7-2022"
 output: pdf_document
 ---
 
-# Regression
+# Regression problems
+
+For the regression problems, I fitted:
+
+* Basic approaches:
+  * GLMM tree
+  * BART
+  * Simplistic born again: GLMM tree fitted to original $X$, and $\hat{y}$ from BART instead of $y$.
+
+* Posterior sampling approaches:
+  * $N_{gen} = 1$ 
+  * $N_{gen} = 5$ 
+  * $N_{gen} = 10$ 
+  
+* Born-again approaches:
+  * Several combinations of $p_{alt}$ (0, .25, .5, 1) and $N_{gen}$ (1, 5, 10).
+  
+As in the Shang & Breiman paper, I used 10 repeated of 10-fold CV for performance assessment.
+  
+
+## Summary of findings
+
+* Best-performing approach is Breiman's born-again.
+
+* Higher values of $N_{gen}$ yield both lower MSE and tree size.
+
+* Simplistic born-again approach, which keeps original $X$ intact seems to do pretty well already.
+
+* High values of $p_{alt}$ (0.5, 1.0) **only** work well on Friedman problems, which has zero correlation between predictors.
+
+* Often, $p_{alt} = 0$ works well. Thus, simply resampling from $X$ a lot, with no permuting of the values may often work better! 
+
+* Posterior sampling approach does not seem to outperform simplistic or Breiman's born-again approaches.
+
+Further, I often omitted $N_{gen}=5$ from the plots for the born-again approaches, because it always seemed to perform i nthe middle between $N_{gen} = 1$ and $N_{gen}=10$. 
+
+Posterior sampling might work better for uncertainty quantification, but this would be future research. 
+
+
 
 ## Boston Housing
 
 ```{r, fig.height = 3}
 library("mlbench")
 library("ggplot2")
-## Compute intercorrelation
+
+## Compute intercorrelations
 data("BostonHousing")
 p <- ncol(BostonHousing)-1
 sum(cor(sapply(BostonHousing[ , -14L], function(x) 
@@ -20,28 +59,24 @@ sum(cor(sapply(BostonHousing[ , -14L], function(x)
 
 load(file = "BostonHousing MSE.Rda")
 load(file = "BostonHousing tree_size.Rda")
-#boxplot(MSE)
 colMeans(MSE)
 which.min(colMeans(MSE[ , -2]))
 sapply(MSE, sd)
-#boxplot(tree_size)
 colMeans(tree_size)
 sapply(tree_size, sd)
 
-
-
 theme_set(theme_gray(base_size = 8))
+```
 
+```{r, fig.height = 3, echo=FALSE, warning=FALSE}
 ## Create long data and plot
 omit_inds <- which(names(MSE) %in% c("BaSmear_N=5_palt=0", "BaSmear_N=5_palt=0.25", 
                                     "BaSmear_N=5_palt=0.5", "BaSmear_N=5_palt=1"))
-
 MSE_long <- stack(MSE[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(MSE_long) <- c("MSE", "method")
 MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
                             ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
-
 levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -56,10 +91,11 @@ ggplot(MSE_long) +
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
 
 size_long <- stack(tree_size[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(size_long) <- c("size", "method")
 size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
-                            ifelse(grepl("BaSmear", size_long$method) & grepl("BaSmear", size_long$method), "Smearing", "Basic approaches"))
+                            ifelse(grepl("BaSmear", size_long$method) & grepl(
+                              "BaSmear", size_long$method), "Smearing", "Basic approaches"))
 levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -71,15 +107,13 @@ ggplot(size_long) +
   facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "# of splits") + 
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
-
-
 ```
 
 
 ## Ozone
 
 ```{r, fig.height = 3}
-## Compute intercorrelation
+## Compute intercorrelations
 data("Ozone")
 p <- ncol(Ozone)-2
 sum(cor(sapply(Ozone[ , -c(9L, 13L)], function(x) 
@@ -87,30 +121,26 @@ sum(cor(sapply(Ozone[ , -c(9L, 13L)], function(x)
 
 load(file = "Ozone MSE.Rda")
 load(file = "Ozone tree_size.Rda")
-table(is.na(MSE))
 
-sapply(MSE, function(x) table(is.na(x))) 
-#boxplot(MSE)
+sapply(MSE[ , 1:5], function(x) table(is.na(x))) ## Not all computations completed
 colMeans(MSE, na.rm=TRUE)
-which.min(colMeans(MSE[ , -2]))
-sapply(MSE, sd)
-#boxplot(tree_size)
-colMeans(tree_size)
-sapply(tree_size, sd)
+which.min(colMeans(MSE[ , -2], na.rm=TRUE))
+sapply(MSE, sd, na.rm=TRUE)
+colMeans(tree_size, na.rm=TRUE)
+sapply(tree_size, sd, na.rm=TRUE)
+```
 
-
+```{r,echo=FALSE, fig.height = 3, warning=FALSE}
 theme_set(theme_gray(base_size = 8))
 
 ## Create long data and plot
 omit_inds <- which(names(MSE) %in% c("BaSmear_N=5_palt=0", "BaSmear_N=5_palt=0.25", 
                                     "BaSmear_N=5_palt=0.5", "BaSmear_N=5_palt=1"))
-
 MSE_long <- stack(MSE[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(MSE_long) <- c("MSE", "method")
 MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
                             ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
-
 levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -125,10 +155,11 @@ ggplot(MSE_long) +
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
 
 size_long <- stack(tree_size[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(size_long) <- c("size", "method")
 size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
-                            ifelse(grepl("BaSmear", size_long$method) & grepl("BaSmear", size_long$method), "Smearing", "Basic approaches"))
+                            ifelse(grepl("BaSmear", size_long$method) & grepl(
+                              "BaSmear", size_long$method), "Smearing", "Basic approaches"))
 levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -159,27 +190,25 @@ set.seed(42)
 vars <- c(var(mlbench.friedman1(10000)$y), 
           var(mlbench.friedman2(210000)$y),
           var(mlbench.friedman3(10000)$y))
-#sapply(MSE, boxplot) 
 sapply(MSE, colMeans)
-round((1/vars)*(t(sapply(MSE, colMeans))), digits = 3)
+round((1/vars)*(t(sapply(MSE, colMeans))), digits = 3) ## R2s
 sapply(MSE, function(x) which.min(colMeans(x[ , -2])))
 sapply(MSE, function(x) sapply(x, sd))
-#sapply(MSE, boxplot)
-sapply(tree_size, colMeans)
-sapply(tree_size, function(x) sapply(x, sd))
+#sapply(tree_size, colMeans)
+#sapply(tree_size, function(x) sapply(x, sd))
+```
 
+### Plot 1st Friedman problem
 
+```{r,echo=FALSE, fig.height = 3, warning=FALSE}
 MSE <- MSE[[1]]
 tree_size <- tree_size[[1]]
-
-
 
 ## Create long data and plot
 omit_inds <- which(names(MSE) %in% c("BaSmear_N=5_palt=0", "BaSmear_N=5_palt=0.25", 
                                     "BaSmear_N=5_palt=0.5", "BaSmear_N=5_palt=1"))
-
 MSE_long <- stack(MSE[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(MSE_long) <- c("MSE", "method")
 MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
                             ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
@@ -198,10 +227,11 @@ ggplot(MSE_long) +
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
 
 size_long <- stack(tree_size[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(size_long) <- c("size", "method")
 size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
-                            ifelse(grepl("BaSmear", size_long$method) & grepl("BaSmear", size_long$method), "Smearing", "Basic approaches"))
+                            ifelse(grepl("BaSmear", size_long$method) & grepl(
+                              "BaSmear", size_long$method), "Smearing", "Basic approaches"))
 levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -212,13 +242,21 @@ ggplot(size_long) +
                position=position_dodge(1), alpha = .5, width = .6) + 
   facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "# of splits") + 
-  theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
-
-
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank())
 ```
 
 
-# Classification
+
+
+
+\newpage
+# Classification problems
+
+
+I took the same experimental design as for the regression problems. Because $p_{alt} = 1$ did not perform well on any of the real datasets, I omitted that option. 
+
+To generate surrogate data, I took an approach reminiscent of gradient boosting: I fitted the BART model for a binomial response, and generated predicted probabilities. I fed the predicted probabilities into born-again *linear* model trees. I evaluated accuracy as MSE, which does not make it easy to compare to the results of Breiman, but it's a more informative measure of accuracy than the misclassification rate. 
+
 
 ## Breast cancer
 
@@ -232,48 +270,40 @@ sum(cor(sapply(BreastCancer[ , -c(1, 11)], function(x)
 load(file = "BreastCancer MSE.Rda")
 load(file = "BreastCancer acc.Rda")
 load(file = "BreastCancer tree_size.Rda")
-#boxplot(MSE)
-#boxplot(acc)
 colMeans(MSE)
 which.min(colMeans(MSE[ , -2]))
 which.min(colMeans(acc[ , -2]))
 sapply(MSE, sd)
-#boxplot(tree_size)
 colMeans(tree_size)
 sapply(tree_size, sd)
+```
 
-
+```{r,echo=FALSE, fig.height = 3, warning=FALSE}
 theme_set(theme_gray(base_size = 8))
 
 ## Create long data and plot
 omit_inds <- which(names(MSE) %in% c("N=5, palt=0", "N=5, palt=0.25", 
-                                    "N=5, palt=0.5", "N=5, palt=1"))
-
-
+                                    "N=5, palt=0.5"))
 MSE_long <- stack(MSE[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
 names(MSE_long) <- c("MSE", "method")
-#MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
-#                            ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
-
+MSE_long$panel <- ifelse(grepl("palt", MSE_long$method), "Smearing of X", 
+                         ifelse(grepl("N=", MSE_long$method), "Posterior sampling of y", "Basic approaches"))
 levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
-                                "N_gen=1, p_alt=0.5", "N_gen=10, p_alt=0.5", 
-                                "N_gen=1, p_alt=1", "N_gen=10, p_alt=1")
+                                "N_gen=1, p_alt=0.5", "N_gen=10, p_alt=0.5")
 levels(MSE_long$method) <- levs
 ggplot(MSE_long) +
   geom_boxplot(aes(x=method, y=MSE, fill = method), 
                position=position_dodge(1), alpha = .5, width = .6) + 
-  #facet_grid(~panel, scales = "free", space = "free") +
+  facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "MSE") + 
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
 
 size_long <- stack(tree_size[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
 names(size_long) <- c("size", "method")
-size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
-                            ifelse(grepl("BaSmear", size_long$method) & grepl("BaSmear", size_long$method), "Smearing", "Basic approaches"))
+size_long$panel <- ifelse(grepl("palt", size_long$method), "Smearing of X", 
+                         ifelse(grepl("N=", size_long$method), "Posterior sampling of y", "Basic approaches"))
 levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -285,7 +315,6 @@ ggplot(size_long) +
   facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "# of splits") + 
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
-
 ```
 
 
@@ -294,7 +323,6 @@ ggplot(size_long) +
 ## Ionosphere
 
 ```{r, fig.height = 3}
-
 library("mlbench")
 
 ## Compute intercorrelation
@@ -306,30 +334,25 @@ sum(cor(sapply(Ionosphere[ , -c(2L, 35L)], function(x)
 load(file = "Ionosphere MSE.Rda")
 load(file = "Ionosphere acc.Rda")
 load(file = "Ionosphere tree_size.Rda")
-#boxplot(MSE)
-#boxplot(acc)
 colMeans(MSE)
 which.min(colMeans(MSE[ , -2]))
 which.min(colMeans(acc[ , -2]))
 sapply(MSE, sd)
-#boxplot(tree_size)
 colMeans(tree_size, na.rm=TRUE)
 sapply(tree_size, sd)
+```
 
-
+```{r, fig.height = 3, echo=FALSE, warning=FALSE}
 theme_set(theme_gray(base_size = 8))
 
 ## Create long data and plot
 omit_inds <- which(names(MSE) %in% c("N=5, palt=0", "N=5, palt=0.25", 
                                     "N=5, palt=0.5", "N=5, palt=1"))
-
-
 MSE_long <- stack(MSE[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(MSE_long) <- c("MSE", "method")
-#MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
-#                            ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
-
+MSE_long$panel <- ifelse(grepl("palt", MSE_long$method), "Smearing of X",
+                            ifelse(grepl("N=", MSE_long$method), "Posterior sampling of y", "Basic approaches"))
 levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -339,15 +362,14 @@ levels(MSE_long$method) <- levs
 ggplot(MSE_long) +
   geom_boxplot(aes(x=method, y=MSE, fill = method), 
                position=position_dodge(1), alpha = .5, width = .6) + 
-  #facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "MSE") + 
+  facet_grid(~panel, scales = "free", space = "free") +
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
 
 size_long <- stack(tree_size[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
 names(size_long) <- c("size", "method")
-size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
-                            ifelse(grepl("BaSmear", size_long$method) & grepl("BaSmear", size_long$method), "Smearing", "Basic approaches"))
+size_long$panel <- ifelse(grepl("palt", size_long$method), "Smearing of X", 
+                         ifelse(grepl("N=", size_long$method), "Posterior sampling of y", "Basic approaches"))
 levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -359,8 +381,6 @@ ggplot(size_long) +
   facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "# of splits") + 
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
-
-
 ```
 
 
@@ -378,30 +398,24 @@ sum(cor(sapply(Sonar[ , -61L], function(x)
 load(file = "Sonar MSE.Rda")
 load(file = "Sonar acc.Rda")
 load(file = "Sonar tree_size.Rda")
-#boxplot(MSE)
-#boxplot(acc)
 colMeans(MSE)
 which.min(colMeans(MSE[ , -2]))
 which.min(colMeans(acc[ , -2]))
 sapply(MSE, sd)
-#boxplot(tree_size)
 colMeans(tree_size, na.rm=TRUE)
 sapply(tree_size, sd)
+```
 
-
+```{r, fig.height = 3, echo=FALSE, warning=FALSE}
 theme_set(theme_gray(base_size = 8))
 
 ## Create long data and plot
 omit_inds <- which(names(MSE) %in% c("N=5, palt=0", "N=5, palt=0.25", 
                                     "N=5, palt=0.5", "N=5, palt=1"))
-
-
 MSE_long <- stack(MSE[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
 names(MSE_long) <- c("MSE", "method")
-#MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
-#                            ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
-
+MSE_long$panel <- ifelse(grepl("palt", MSE_long$method), "Smearing of X",
+                            ifelse(grepl("N=", MSE_long$method), "Posterior sampling of y", "Basic approaches"))
 levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -411,15 +425,15 @@ levels(MSE_long$method) <- levs
 ggplot(MSE_long) +
   geom_boxplot(aes(x=method, y=MSE, fill = method), 
                position=position_dodge(1), alpha = .5, width = .6) + 
-  #facet_grid(~panel, scales = "free", space = "free") +
+  facet_grid(~panel, scales = "free", space = "free") +
   labs(x = "", y = "MSE") + 
   theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
 
 size_long <- stack(tree_size[ , -omit_inds])
-## Create identifier for: original, BA with N, Bayesian BA, Breimand BA 
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
 names(size_long) <- c("size", "method")
-size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
-                            ifelse(grepl("BaSmear", size_long$method) & grepl("BaSmear", size_long$method), "Smearing", "Basic approaches"))
+size_long$panel <- ifelse(grepl("palt", size_long$method), "Smearing of X", 
+                         ifelse(grepl("N=", size_long$method), "Posterior sampling of y", "Basic approaches"))
 levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
                                 "N_gen=1, p_alt=0", "N_gen=10, p_alt=0",  
                                 "N_gen=1, p_alt=0.25",  "N_gen=10, p_alt=0.25", 
@@ -434,7 +448,172 @@ ggplot(size_long) +
 ```
 
 
-# Clustered
+\newpage
+# Clustered / multilevel problems
+
+I used a similar design as for the experiments above. However, with the very large sample sizes for the ECLSK Math and the Marriage dataset, this was computationally infeasible, so I selected small samples of observations and used the rest of the data as a test set.
+
+For longitudinal data, I used 'new' observations for assessing predictive accuracy; i.e., training and test observations are from different clusters. For the `safety` data, training and test observations were forced to be from the same clusters. Of note, for all GLMM trees (both born-again and default), predictions were generated *excluding* the random effects. For BART, this does not seem possible. For generating BART predictions, both for the born-again approaches and accuracy assessment, the random effects were always included.
+
+For permuting $X$ in Breiman's born-again approach, I only permuted predictor variable values. The cluster indicator was *never* permuted.
+
+For the ECLSK Math data, I additionally specified `months` as a linear predictor in the GLMM tree, to see if adding this information improves performance.
+
+Of note, if `months` was completely omitted from all models, predictive accuracy was low, but BART performed better than GLMM tree and the born-again approach was effective.  
+
+Of note:
+
+* I have no idea how BART generates random effects predictions for test observations from new folds.
+
+* Observations weights $<1$ are probably not used correctly by `lmer` / `glmer` in `lmertree` / `glmertree`. This will affect the size of the random effects (which will likely deviate more strongly from 0 than they should). This does not affect predictive accuracy too much, because random effects are not included in accuracy evaluation of the trees. But it will at least slightly affect the resulting tree.
 
 
+## Summary of findings
+
+* Born-again approach seems to outperform posterior sampling and simplistic born-again approach.
+
+* The simplistic born-again approach does already quite well, but not on ECLSK Math data.
+
+* Non-zero values of $p_{alt}$ perform well.
+
+* It is very interesting to see that posterior sampling with $N_{gen} > 1$ worsens performance, unlike with the non-multilevel regression and classification problems above. A possible explanation is that the PPD of BART contains too much variation due to the random effects. 
+
+
+## Safety data
+
+```{r, fig.height = 3}
+load("Safety MSE.Rda")
+load("Safety tree_size.Rda")
+colMeans(MSE)
+which.min(colMeans(MSE[ , -2]))
+sapply(MSE, sd)
+```
+
+```{r, fig.height = 3, echo=FALSE, warning=FALSE}
+theme_set(theme_gray(base_size = 8))
+
+## Create long data and plot
+MSE_long <- stack(MSE)
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA 
+names(MSE_long) <- c("MSE", "method")
+MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
+                            ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
+levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
+                                "N_gen=1, p_alt=0", "N_gen=5, p_alt=0","N_gen=10, p_alt=0",  
+                                "N_gen=1, p_alt=0.25",  "N_gen=5, p_alt=0.25", "N_gen=10, p_alt=0", 
+                                "N_gen=1, p_alt=0.5", "N_gen=5, p_alt=0.5", "N_gen=10, p_alt=0")
+levels(MSE_long$method) <- levs
+ggplot(MSE_long) +
+  geom_boxplot(aes(x=method, y=MSE, fill = method), 
+               position=position_dodge(1), alpha = .5, width = .6) + 
+  facet_grid(~panel, scales = "free", space = "free") +
+  labs(x = "", y = "MSE") + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank()) 
+## Tree sizes were incorrectly extracted for this problem, so not plotted
+```
+
+## ECLSK Math
+
+```{r, fig.height = 3}
+load("ECLSK Math MSE.Rda")
+load("ECLSK Math tree_size.Rda")
+colMeans(MSE, na.rm=TRUE)
+which.min(colMeans(MSE[ , -c(2, 16)], na.rm = TRUE))
+sapply(MSE, sd, na.rm=TRUE)
+sapply(MSE[ , 1:5], function(x) table(is.na(x)))
+```
+
+```{r, fig.height = 3, echo=FALSE, warning=FALSE}
+theme_set(theme_gray(base_size = 8))
+
+## Create long data and plot
+## Exclude GLMM tree incorporating time, which does much better than all methods
+MSE_long <- stack(MSE)
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA
+names(MSE_long) <- c("MSE", "method")
+MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
+                            ifelse(grepl("BasSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
+levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
+                                "N_gen=1, p_alt=0", "N_gen=5, p_alt=0","N_gen=10, p_alt=0",
+                                "N_gen=1, p_alt=0.25",  "N_gen=5, p_alt=0.25", "N_gen=10, p_alt=0",
+                                "N_gen=1, p_alt=0.5", "N_gen=5, p_alt=0.5", "N_gen=10, p_alt=0", "tree (time-based)")
+levels(MSE_long$method) <- levs
+ggplot(MSE_long) +
+  geom_boxplot(aes(x=method, y=MSE, fill = method),
+               position=position_dodge(1), alpha = .5, width = .6) +
+  facet_grid(~panel, scales = "free", space = "free") +
+  labs(x = "", y = "MSE") +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank())
+
+size_long <- stack(tree_size)
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA
+names(size_long) <- c("size", "method")
+size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
+                            ifelse(grepl("BasSmear", size_long$method), "Smearing", "Basic approaches"))
+levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
+                                "N_gen=1, p_alt=0", "N_gen=5, p_alt=0", "N_gen=10, p_alt=0",
+                                "N_gen=1, p_alt=0.25", "N_gen=5, p_alt=0.25", "N_gen=10, p_alt=0.25",
+                                "N_gen=1, p_alt=0.5", "N_gen=5, p_alt=0.5", "N_gen=10, p_alt=0.5", "tree (time-based")
+ggplot(size_long) +
+  geom_boxplot(aes(x=panel, y=size, fill = method),
+               position=position_dodge(1), alpha = .5, width = .6) +
+  facet_grid(~panel, scales = "free", space = "free") +
+  labs(x = "", y = "# of splits") +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank())
+```
+
+
+## Marriage
+
+
+```{r, fig.height = 3}
+load("Marriage MSE.Rda")
+load("Marriage tree_size.Rda")
+colMeans(MSE, na.rm=TRUE)
+which.min(colMeans(MSE[ , -2], na.rm = TRUE))
+sapply(MSE, sd, na.rm=TRUE)
+sapply(MSE[ , 1:5], function(x) table(is.na(x)))
+```
+
+Note: Tree size not counted correctly for default GLMM tree and simplistic approach!!!
+
+```{r, fig.height = 3, echo=FALSE, warning=FALSE}
+theme_set(theme_gray(base_size = 8))
+
+## Create long data and plot
+## Exclude GLMM tree incorporating time, which does much better than all methods
+MSE_long <- stack(MSE)
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA
+names(MSE_long) <- c("MSE", "method")
+MSE_long$panel <- ifelse(grepl("BaBayes", MSE_long$method), "Posterior sampling of y",
+                            ifelse(grepl("BaSmear", MSE_long$method), "Smearing of X", "Basic approaches"))
+levs <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
+                                "N_gen=1, p_alt=0", "N_gen=5, p_alt=0","N_gen=10, p_alt=0",
+                                "N_gen=1, p_alt=0.25",  "N_gen=5, p_alt=0.25", "N_gen=10, p_alt=0",
+                                "N_gen=1, p_alt=0.5", "N_gen=5, p_alt=0.5", "N_gen=10, p_alt=0")
+levels(MSE_long$method) <- levs
+ggplot(MSE_long) +
+  geom_boxplot(aes(x=method, y=MSE, fill = method),
+               position=position_dodge(1), alpha = .5, width = .6) +
+  facet_grid(~panel, scales = "free", space = "free") +
+  labs(x = "", y = "MSE") +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank())
+
+size_long <- stack(tree_size)
+## Create identifier for: original, BA with N, Bayesian BA, Breiman BA
+names(size_long) <- c("size", "method")
+size_long$panel <- ifelse(grepl("BaBayes", size_long$method), "Posterior sampling",
+                            ifelse(grepl("BaSmear", size_long$method) & grepl(
+                              "BaSmear", size_long$method), "Smearing", "Basic approaches"))
+levels(size_long$method) <- c("tree", "BART", "Simplistic born-again", "N_gen=1", "N_gen=5", "N_gen=10",
+                                "N_gen=1, p_alt=0", "N_gen=5, p_alt=0", "N_gen=10, p_alt=0",
+                                "N_gen=1, p_alt=0.25",  "N_gen=5, p_alt=0.25", "N_gen=10, p_alt=0.25",
+                                "N_gen=1, p_alt=0.5", "N_gen=5, p_alt=0.5", "N_gen=10, p_alt=0.5")
+ggplot(size_long) +
+  geom_boxplot(aes(x=panel, y=size, fill = method),
+               position=position_dodge(1), alpha = .5, width = .6) +
+  facet_grid(~panel, scales = "free", space = "free") +
+  labs(x = "", y = "# of splits") +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank())
+```
 
