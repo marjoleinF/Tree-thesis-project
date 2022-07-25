@@ -386,6 +386,8 @@ for (k in 1:nreps) {
     testdat <- data[!data$CHILDID %in% child_ids, ]
 
     ## Check whether all factor levels in test are also in train, else move obs.
+    ## Not sure if this is good approach, might force same set of CHILDIDS into 
+    ##  all training datasets!
     for (fact in c("RACE")) {
       levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
       if (!all(levs)) {

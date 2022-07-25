@@ -22,7 +22,7 @@ For the regression problems, I fitted:
 * Born-again approaches:
   * Several combinations of $p_{alt}$ (0, .25, .5, 1) and $N_{gen}$ (1, 5, 10).
   
-As in the Shang & Breiman paper, I used 10 repeated of 10-fold CV for performance assessment.
+As in the Shang & Breiman paper, I used 10 repeats of 10-fold CV for performance assessment.
   
 
 ## Summary of findings
