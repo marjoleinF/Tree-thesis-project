@@ -518,8 +518,10 @@ ggplot(MSE_long) +
 load("ECLSK Math MSE.Rda")
 load("ECLSK Math tree_size.Rda")
 colMeans(MSE, na.rm=TRUE)
+## Omit crazy outlier; don't know how such extreme value is even possible
+MSE$`BasSmear_N=5_palt=0.25`[MSE$`BasSmear_N=5_palt=0.25` > 100] <- NA
 which.min(colMeans(MSE[ , -c(2, 16)], na.rm = TRUE))
-sapply(MSE, sd, na.rm=TRUE)
+round(sapply(MSE, sd, na.rm=TRUE), digits = 4)
 sapply(MSE[ , 1:5], function(x) table(is.na(x)))
 ```
 
