@@ -1,0 +1,467 @@
+---
+title: "Classification"
+author: "Marjolein Fokkema"
+date: "19-7-2022"
+output: pdf_document
+---
+
+```{r}
+## Bayesian data generation function
+## Returns X_gen, y_gen
+gendata_bay <- function(data, PPD, ngen) {
+  
+  if (nrow(data) != ncol(PPD)) 
+    stop("Amount of observations in PPD is different from data")
+  
+  index_gen <- sample.int(n = nrow(data), size = ngen*nrow(data), replace = TRUE)
+  x_gen <- data[index_gen, ]
+  
+  ## Posterior Predictive Distribution has 2000 rows (default) and nobs columns
+  ## Thus, for each bootstrap sampled row, selected correspdonding column
+  ## and sample a random value from that posterior
+  y_gen <- sapply(index_gen, function(i) sample(x = PPD[ , i], size = 1))
+  
+  return(cbind(x_gen, y_gen))
+}
+
+
+## Smearing data generation function
+## Returns X_gen only
+gendata_smr <- function(data, palt = 0.5, ngen) {
+
+  if (palt < 0 | palt > 1) stop("palt must be bound between between 0 and 1")
+  
+  index_gen <- sample.int(n = nrow(data), size = ngen*nrow(data), replace = TRUE)
+  gen_data <- data[index_gen, ]
+  
+  ## With probability palt, replace value in X_gen with random sample from 
+  ## corresponding column
+  if (palt != 0) {
+    for (i in 1:nrow(gen_data)) {
+      for (j in 1:ncol(gen_data)) {
+        if (rbinom(n = 1, size = 1, prob = palt)) { 
+          gen_data[i, j] <- sample(x = data[ , j], size = 1)
+        }
+      }
+    }
+  }
+  return(gen_data)
+}
+```
+
+
+
+## BreastCancer
+
+```{r}
+library("partykit")
+library("dbarts")
+library("mlbench")
+
+data(BreastCancer)
+data <- BreastCancer
+data <- na.omit(data)
+data[ , sapply(data, is.ordered)] <- sapply(data[ , sapply(data, is.ordered)], as.numeric)
+
+nfolds <- 10
+nreps <- 10
+ngensizes <- c(1, 5, 10)
+palts <- c(0, 0.25, 0.5)
+
+## Create objects for saving results (MSE for Bayesian approach, MSE2 for Breiman approach)
+MSE <- data.frame(matrix(data = NA, nrow = nfolds*nreps, 
+                         ncol = 3 + length(ngensizes) + length(ngensizes)*length(palts)))
+BaSmear_design <- expand.grid(ngensizes, palts)
+colnames(BaSmear_design) <- c("ngen", "palt")
+colnames(MSE) <- c("tree", "BART", "Born-again tree", 
+                   paste0("N=", ngensizes),
+                   paste0("N=", BaSmear_design[ , 1], ", palt=", BaSmear_design[ , 2]))
+rownames(MSE) <- paste0("rep", sort(rep(1:nreps, times = nfolds)), "_fold", rep(1:nfolds, times = nreps))
+#MSE <- MSE[ , -which(is.na(colnames(MSE)))]
+tree_size <- acc <- MSE
+
+set.seed(42)
+for (k in 1:nreps) {
+    
+  ## Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+  
+  for (i in 1:nfolds) {
+    
+    ## Select train and test data
+    traindat <- data[fold_ids != i, -which(names(data) == "Id")]
+    testdat <- data[fold_ids == i, ]
+    
+    ## Check whether all factor levels in test are also in train, else move obs.
+    for (fact in c("Bare.nuclei", "Bl.cromatin", "Normal.nucleoli", "Mitoses")) {
+      levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
+      if (!all(levs)) {
+        test <- test[-which(!testdat[ , fact] %in% unique(testdat[ , fact])[levs]), ]
+        print(paste0("Levels of ", i, " omitted from test data: ", 
+                             unique(testdat[ , fact])[!levs]))
+      }      
+    }
+    train_x <- traindat[ , -which(names(traindat) == "Class")]
+    train_y <- as.numeric(traindat$Class) - 1
+    test_x <- testdat[ , -which(names(data) == "Class")]
+    test_y <- as.numeric(testdat$Class) - 1    
+
+    
+    ## Fit regular GLMM tree
+    gt <- glmtree(Class ~ 1 | ., data = traindat, family = binomial)
+    pred_gt <- predict(gt, newdata = testdat, type = "response")
+    MSE[(k-1)*10+i, 1] <- mean((test_y - pred_gt)^2)
+    acc[(k-1)*10+i, 1] <- mean(test_y - pred_gt > .5)
+    tree_size[(k-1)*10+i, 1] <- (length(gt)-1)/2
+
+    
+    ## 1) Fit (and evaluate) BART
+    ## 2) Generate surrogate data
+    ## 3) Fit and evaluate tree fitted to surrogate data
+    
+    ## Fit Bayesian born-again approach
+    ##
+    brt <- rbart(x.train = train_x, y.train = train_y, x.test = test_x, 
+                ntree = 100, combinechains = TRUE, verbose = FALSE)
+    brt_test_preds <- binomial()$linkinv(colMeans(brt$yhat.test))
+    brt_train_preds <- binomial()$linkinv(colMeans(brt$yhat.train))
+    
+    MSE[(k-1)*10+i, 2] <- mean((test_y - brt_test_preds)^2)
+    acc[(k-1)*10+i, 2] <- mean(test_y - brt_test_preds > .5)
+    surr_dat <- traindat
+    surr_dat$Class <- brt_train_preds
+    ba_gt <- lmtree(Class ~ 1 | ., data = surr_dat)
+    pred_babart <- predict(ba_gt, newdata = testdat)
+    MSE[(k-1)*10+i, 3] <- mean((test_y - pred_babart)^2)
+    acc[(k-1)*10+i, 3] <- mean(test_y - pred_babart > .5)
+    tree_size[(k-1)*10+i, 3] <- (length(ba_gt)-1)/2
+    
+    posterior <- binomial()$linkinv(brt$yhat.train)
+    for (ngen in ngensizes) {
+      try({
+      surr_dat <- gendata_bay(data = traindat, PPD = posterior, ngen = ngen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - Class, data = surr_dat,
+                      weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      acc[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean(test_y - pred_babart > .5)
+      MSE[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean((test_y - pred_babart)^2)
+      tree_size[(k-1)*10+i, 3+match(ngen, ngensizes)] <- (length(ba_gt)-1)/2
+      })
+    }
+
+    ## Fit Breiman born-again approach
+    ##
+    for (ngen_palt in 1:nrow(BaSmear_design)) {
+      palt <- BaSmear_design$palt[ngen_palt]
+      ngen <- BaSmear_design$ngen[ngen_palt]
+      surr_dat <- gendata_smr(data = traindat, palt = palt, ngen = ngen)
+      brt <- bart(x.train = train_x, y.train = train_y, x.test = surr_dat,
+                  verbose = FALSE, ntree = 100, combinechains = TRUE)
+      y_gen <-  binomial()$linkinv(colMeans(brt$yhat.test))
+      try({
+      surr_dat <- cbind(surr_dat, y_gen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - Class, data = surr_dat,
+                       weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      MSE[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        mean((test_y - pred_babart)^2)
+      acc[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        mean(test_y - pred_babart > 0.5)
+      tree_size[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        (length(ba_gt)-1)/2
+      })
+    }
+    print(paste0("Finished fold ", i, " of repetition ", k))
+    save(MSE, file = "BreastCancer MSE.Rda")
+    save(acc, file = "BreastCancer acc.Rda")
+    save(tree_size, file = "BreastCancer tree_size.Rda")
+  }
+}
+```
+
+```{r, eval=FALSE}
+load(file = "BreastCancer MSE.Rda")
+load(file = "BreastCancer acc.Rda")
+load(file = "BreasCancer tree_size.Rda")
+boxplot(MSE)
+boxplot(acc)
+colMeans(MSE)
+which.min(colMeans(MSE[ , -2]))
+which.min(colMeans(acc[ , -2]))
+sapply(MSE, sd)
+boxplot(tree_size)
+colMeans(tree_size, na.rm=TRUE)
+sapply(tree_size, sd)
+```
+
+
+## Ionosphere
+
+```{r}
+data("Ionosphere")
+data <- Ionosphere
+data <- data[ , -2L] ## V2 has 0 variance
+
+nfolds <- 10
+nreps <- 10
+ngensizes <- c(1, 5, 10)
+palts <- c(0, 0.25, 0.5)
+
+## Create objects for saving results (MSE for Bayesian approach, MSE2 for Breiman approach)
+MSE <- data.frame(matrix(data = NA, nrow = nfolds*nreps, 
+                         ncol = 3 + length(ngensizes) + length(ngensizes)*length(palts)))
+BaSmear_design <- expand.grid(ngensizes, palts)
+colnames(BaSmear_design) <- c("ngen", "palt")
+colnames(MSE) <- c("tree", "BART", "Born-again tree", 
+                   paste0("N=", ngensizes),
+                   paste0("N=", BaSmear_design[ , 1], ", palt=", BaSmear_design[ , 2]))
+rownames(MSE) <- paste0("rep", sort(rep(1:nreps, times = nfolds)), "_fold", rep(1:nfolds, times = nreps))
+#MSE <- MSE[ , -which(is.na(colnames(MSE)))]
+tree_size <- acc <- MSE
+
+set.seed(42)
+for (k in 1:nreps) {
+    
+  ## Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+  
+  for (i in 1:nfolds) {
+    
+    ## Select train and test data
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    train_x <- traindat[ , -which(names(traindat) == "Class")]
+    train_y <- as.numeric(traindat$Class) - 1
+    test_x <- testdat[ , -which(names(data) == "Class")]
+    test_y <- as.numeric(testdat$Class) - 1
+    
+    
+    ## Fit regular GLMM tree
+    gt <- glmtree(Class ~ 1 | ., data = traindat, family = binomial)
+    pred_gt <- predict(gt, newdata = testdat, type = "response")
+    MSE[(k-1)*10+i, 1] <- mean((test_y - pred_gt)^2)
+    acc[(k-1)*10+i, 1] <- mean(test_y - pred_gt > .5)
+    tree_size[(k-1)*10+i, 1] <- (length(gt)-1)/2
+
+    
+    ## 1) Fit (and evaluate) BART
+    ## 2) Generate surrogate data
+    ## 3) Fit and evaluate tree fitted to surrogate data
+    
+    ## Fit Bayesian born-again approach
+    ##
+    brt <- bart(x.train = train_x, y.train = train_y, x.test = test_x, 
+                ntree = 100, combinechains = TRUE, verbose = FALSE)
+    brt_test_preds <- binomial()$linkinv(colMeans(brt$yhat.test))
+    brt_train_preds <- binomial()$linkinv(colMeans(brt$yhat.train))
+    MSE[(k-1)*10+i, 2] <- mean((test_y - brt_test_preds)^2)
+    acc[(k-1)*10+i, 2] <- mean(test_y - brt_test_preds > .5)
+    surr_dat <- traindat
+    surr_dat$Class <- brt_train_preds
+    ba_gt <- lmtree(Class ~ 1 | ., data = surr_dat)
+    pred_babart <- predict(ba_gt, newdata = testdat)
+    MSE[(k-1)*10+i, 3] <- mean((test_y - pred_babart)^2)
+    acc[(k-1)*10+i, 3] <- mean(test_y - pred_babart > .5)
+    tree_size[(k-1)*10+i, 3] <- (length(ba_gt)-1)/2
+    
+    posterior <- binomial()$linkinv(brt$yhat.train)
+    for (ngen in ngensizes) {
+      surr_dat <- gendata_bay(data = traindat, PPD = posterior, ngen = ngen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - Class, data = surr_dat,
+                      weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      acc[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean(test_y - pred_babart > .5)
+      MSE[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean((test_y - pred_babart)^2)
+      tree_size[(k-1)*10+i, 3+match(ngen, ngensizes)] <- (length(ba_gt)-1)/2
+    }
+
+    ## Fit Breiman born-again approach
+    ##
+    for (ngen_palt in 1:nrow(BaSmear_design)) {
+      palt <- BaSmear_design$palt[ngen_palt]
+      ngen <- BaSmear_design$ngen[ngen_palt]
+      surr_dat <- gendata_smr(data = traindat, palt = palt, ngen = ngen)
+      brt <- bart(x.train = train_x, y.train = train_y, x.test = surr_dat,
+                  verbose = FALSE, ntree = 100, combinechains = TRUE)
+      y_gen <-  binomial()$linkinv(colMeans(brt$yhat.test))
+      surr_dat <- cbind(surr_dat, y_gen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - Class, data = surr_dat,
+                       weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      MSE[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        mean((test_y - pred_babart)^2)
+      acc[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        mean(test_y - pred_babart > 0.5)
+      tree_size[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        (length(ba_gt)-1)/2
+    }
+    print(paste0("Finished fold ", i, " of repetition ", k))
+    save(MSE, file = "Ionosphere MSE.Rda")
+    save(acc, file = "Ionosphere acc.Rda")
+    save(tree_size, file = "Ionosphere tree_size.Rda")
+  }
+}
+```
+
+```{r, eval=FALSE}
+load(file = "Ionosphere MSE.Rda")
+load(file = "Ionosphere acc.Rda")
+load(file = "Ionosphere tree_size.Rda")
+boxplot(MSE)
+boxplot(acc)
+colMeans(MSE)
+which.min(colMeans(MSE[ , -2]))
+which.min(colMeans(acc[ , -2]))
+sapply(MSE, sd)
+boxplot(tree_size)
+colMeans(tree_size, na.rm=TRUE)
+sapply(tree_size, sd)
+```
+
+
+## Glass
+
+
+```{r}
+data("Glass")
+data <- Glass
+table(data$Type)
+```
+
+
+
+## Soybean
+
+```{r}
+data("Soybean")
+data <- Soybean
+table(data$Class)
+```
+
+
+
+## Sonar
+
+```{r}
+data("Sonar")
+data <- Sonar
+  
+nfolds <- 10
+nreps <- 10
+ngensizes <- c(1, 5, 10)
+palts <- c(0, 0.25, 0.5)
+
+## Create objects for saving results (MSE for Bayesian approach, MSE2 for Breiman approach)
+MSE <- data.frame(matrix(data = NA, nrow = nfolds*nreps, 
+                         ncol = 3 + length(ngensizes) + length(ngensizes)*length(palts)))
+BaSmear_design <- expand.grid(ngensizes, palts)
+colnames(BaSmear_design) <- c("ngen", "palt")
+colnames(MSE) <- c("tree", "BART", "Born-again tree", 
+                   paste0("N=", ngensizes),
+                   paste0("N=", BaSmear_design[ , 1], ", palt=", BaSmear_design[ , 2]))
+rownames(MSE) <- paste0("rep", sort(rep(1:nreps, times = nfolds)), "_fold", rep(1:nfolds, times = nreps))
+#MSE <- MSE[ , -which(is.na(colnames(MSE)))]
+tree_size <- acc <- MSE
+
+set.seed(42)
+for (k in 1:nreps) {
+    
+  ## Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+  
+  for (i in 1:nfolds) {
+    
+    ## Select train and test data
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    train_x <- traindat[ , -which(names(traindat) == "Class")]
+    train_y <- as.numeric(traindat$Class) - 1
+    test_x <- testdat[ , -which(names(data) == "Class")]
+    test_y <- as.numeric(testdat$Class) - 1
+    
+    
+    ## Fit regular GLMM tree
+    gt <- glmtree(Class ~ 1 | ., data = traindat, family = binomial)
+    pred_gt <- predict(gt, newdata = testdat, type = "response")
+    MSE[(k-1)*10+i, 1] <- mean((test_y - pred_gt)^2)
+    acc[(k-1)*10+i, 1] <- mean(test_y - pred_gt > .5)
+    tree_size[(k-1)*10+i, 1] <- (length(gt)-1)/2
+
+    
+    ## 1) Fit (and evaluate) BART
+    ## 2) Generate surrogate data
+    ## 3) Fit and evaluate tree fitted to surrogate data
+    
+    ## Fit Bayesian born-again approach
+    ##
+    brt <- bart(x.train = train_x, y.train = train_y, x.test = test_x, 
+                ntree = 100, combinechains = TRUE, verbose = FALSE)
+    brt_test_preds <- binomial()$linkinv(colMeans(brt$yhat.test))
+    brt_train_preds <- binomial()$linkinv(colMeans(brt$yhat.train))
+    MSE[(k-1)*10+i, 2] <- mean((test_y - brt_test_preds)^2)
+    acc[(k-1)*10+i, 2] <- mean(test_y - brt_test_preds > .5)
+    surr_dat <- traindat
+    surr_dat$Class <- brt_train_preds
+    ba_gt <- lmtree(Class ~ 1 | ., data = surr_dat)
+    pred_babart <- predict(ba_gt, newdata = testdat)
+    MSE[(k-1)*10+i, 3] <- mean((test_y - pred_babart)^2)
+    acc[(k-1)*10+i, 3] <- mean(test_y - pred_babart > .5)
+    tree_size[(k-1)*10+i, 3] <- (length(ba_gt)-1)/2
+    
+    posterior <- binomial()$linkinv(brt$yhat.train)
+    for (ngen in ngensizes) {
+      surr_dat <- gendata_bay(data = traindat, PPD = posterior, ngen = ngen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - Class, data = surr_dat,
+                      weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      acc[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean(test_y - pred_babart > .5)
+      MSE[(k-1)*10+i, 3+match(ngen, ngensizes)] <- mean((test_y - pred_babart)^2)
+      tree_size[(k-1)*10+i, 3+match(ngen, ngensizes)] <- (length(ba_gt)-1)/2
+    }
+
+    ## Fit Breiman born-again approach
+    ##
+    for (ngen_palt in 1:nrow(BaSmear_design)) {
+      palt <- BaSmear_design$palt[ngen_palt]
+      ngen <- BaSmear_design$ngen[ngen_palt]
+      surr_dat <- gendata_smr(data = traindat, palt = palt, ngen = ngen)
+      brt <- bart(x.train = train_x, y.train = train_y, x.test = surr_dat,
+                  verbose = FALSE, ntree = 100, combinechains = TRUE)
+      y_gen <-  binomial()$linkinv(colMeans(brt$yhat.test))
+      surr_dat <- cbind(surr_dat, y_gen)
+      ba_gt <- lmtree(y_gen ~ 1 | . - Class, data = surr_dat,
+                       weights = rep(1/ngen, times = nrow(surr_dat)))
+      pred_babart <- predict(ba_gt, newdata = testdat)
+      MSE[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        mean((test_y - pred_babart)^2)
+      acc[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        mean(test_y - pred_babart > 0.5)
+      tree_size[(k-1)*10+i, match(ngen, ngensizes) + match(palt, palts)*length(ngensizes) + 3] <-
+        (length(ba_gt)-1)/2
+    }
+    print(paste0("Finished fold ", i, " of repetition ", k))
+    save(MSE, file = "Sonar MSE.Rda")
+    save(acc, file = "Sonar acc.Rda")
+    save(tree_size, file = "Sonar tree_size.Rda")
+  }
+}
+```
+
+
+```{r, eval=FALSE}
+load(file = "Sonar MSE.Rda")
+load(file = "Sonar acc.Rda")
+load(file = "Sonar tree_size.Rda")
+boxplot(MSE)
+boxplot(acc)
+colMeans(MSE)
+which.min(colMeans(MSE[ , -2]))
+which.min(colMeans(acc[ , -2]))
+sapply(MSE, sd)
+boxplot(tree_size)
+colMeans(tree_size, na.rm=TRUE)
+sapply(tree_size, sd)
+```
