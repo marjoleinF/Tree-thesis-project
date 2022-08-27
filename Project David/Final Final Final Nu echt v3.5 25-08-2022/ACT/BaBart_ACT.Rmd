@@ -1,0 +1,355 @@
+---
+title: "BaBart presentation 5-mei"
+author: "David Eleveld s1741225"
+date: "3-5-2022"
+output: pdf_document
+---
+
+#Presentatie 5-mei 2022
+
+#Setup
+
+##Load requiered packages
+
+```{r Packages, include=FALSE}
+library("haven")
+library("dbarts")
+library("glmertree")
+library("dplyr")
+library("here")
+library("multilevel")
+library("tidyverse")
+library("LongCART")
+```
+
+##Bayesian data generation function
+
+```{r Bayesian Data generation}
+gendata_bay <- function(data, PPD, n_gen){
+  
+  if(nrow(data) != ncol(PPD)){stop("Amount of observations in PPD is different from data")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  x_gen <- data[index_gen,]
+  y_gen <- sapply(index_gen, function(i) sample(x = PPD[,i], size = 1))
+  # y_gen <- sapply(index_gen, function(i) sample(x = PPD[,i][PPD[,i] >= quantile(PPD[,i], probs = .40) & PPD[,i] <= quantile(PPD[,i], probs = .60)], size = 1))
+  
+  return(cbind(x_gen, y_gen))
+}
+```
+
+##Smearing data generation function
+
+```{r Smearing}
+gendata_smr <- function(data, palt = 0.5, n_gen){
+
+  if(palt < 0 | palt > 1){stop("palt must be bound between between 0 and 1")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  gen_data <- data[index_gen,]
+  
+  if(palt != 0){
+    for(i in 1:nrow(gen_data)){
+      
+      for(j in 1:ncol(gen_data)){
+        
+        if(runif(1) <= palt){gen_data[i,j] <- sample(x = data[,j], size = 1)}
+      }
+    }
+  }
+  return(gen_data)
+}
+```
+
+##Load Safety data
+
+```{r Load Safety data}
+set.seed(42)
+
+data(ACTG175)
+## Remove missings
+ACTG175 <- ACTG175[!is.na(ACTG175$cd4), ]
+sapply(data, class)
+
+## Correct coding of factors
+ACTG175$pidnum <- factor(ACTG175$pidnum) 
+ACTG175$hemo <- factor(ACTG175$hemo) 
+ACTG175$homo <- factor(ACTG175$homo)
+ACTG175$drugs <- factor(ACTG175$drugs)
+ACTG175$oprior <- factor(ACTG175$oprior)
+ACTG175$z30 <- factor(ACTG175$z30)
+ACTG175$zprior <- factor(ACTG175$zprior)
+ACTG175$race <- factor(ACTG175$race)
+ACTG175$str2 <- factor(ACTG175$str2)
+ACTG175$symptom <- factor(ACTG175$symptom)
+ACTG175$treat <- factor(ACTG175$treat)
+ACTG175$offtrt <- factor(ACTG175$offtrt)
+
+data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 455),]
+rm(ACTG175)
+```
+
+##Single GLMM tree
+
+```{r}
+set.seed(42)
+nfolds <- 10
+nreps <- 10
+ngensizes <- c(1,5, 10)
+palts <- c(0.25, 0.5)
+tel <- 0
+use_weights <- FALSE
+baygen <- TRUE
+
+
+if(baygen){
+  tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
+  colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
+  rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
+}else{
+  tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = length(ngensizes)*length(palts)))
+  colnames(tree_size) <- colnames(MSE) <- c(paste0("Smearing_N*",expand.grid(ngensizes,palts)[,1], "_palt=",expand.grid(ngensizes,palts)[,2]))
+  rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
+}
+
+unique_test_ids <- list()
+
+system.time(
+for (k in 1:nreps){
+  
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
+  
+  for (i in 1:nfolds){
+    
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    ## check if all ids in testset are present in training set 
+    unique_test_ids[[i]] <- unique(testdat$pidnum[!testdat$pidnum %in% traindat$pidnum]) 
+    ## if not, move random row of unique test ids in from training to test sample 
+    if (length(unique_test_ids[[i]]) > 0) {
+     for (j in unique_test_ids[[i]]) {
+        ids <- which(testdat$pidnum == j)
+        id <- sample(ids, 1L)
+        traindat <- rbind(traindat, testdat[id, ])
+        testdat <- testdat[-id, ]
+     }
+    }
+    
+    if(baygen){
+      # Fit a regualar GLMM tree
+      glmtree <- lmertree(cd4 ~ time | (1 | pidnum) | gender + wtkg + hemo + homo +
+                          drugs + karnof + oprior + z30 + zprior + race + str2 +
+                          symptom + treat + offtrt, 
+                        data = traindat, cluster = pidnum)
+  
+      pred_glmtree <- predict(glmtree, newdata = testdat, allow.new.levels = TRUE)
+  
+      MSE[(k-1)*10+i,1] <- mean((testdat$cd4 - pred_glmtree)^2)
+      tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+      
+      # fit multilevel BART
+      Mbart <- rbart_vi(cd4 ~ time + gender + wtkg + hemo + homo + drugs +
+                          karnof + oprior + z30 + zprior + race + str2 +
+                          symptom + treat + offtrt,
+                        data = traindat, group.by = traindat$pidnum,
+                        test = testdat, group.by.test = testdat$pidnum,
+                        n.trees = 100, keepTrees = TRUE, combineChains = TRUE,
+                        seed = 42)
+      
+      posterior <- Mbart$yhat.train
+      MSE[(k-1)*10+i,2] <- mean((testdat$cd4 - Mbart$yhat.test.mean)^2) 
+    }
+    
+    # fit BaBart GLMM trees with different sizes of Ngen
+    for(ngen in ngensizes){
+      
+      if(baygen){
+        surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+        
+        if(use_weights){
+          babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             weights = rep(1/ngen, times = nrow(surr_mlbart)))
+        }
+        else{
+            babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             maxdepth = 5)
+        }
+      pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
+      MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean((testdat$cd4 - pred_babart)^2)
+      tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+      }
+      else{
+        for(palt in palts){
+          
+          surr_mlbart <- gendata_smr(traindat, palt, ngen * nrow(traindat))
+          
+          Mbart <- rbart_vi(cd4 ~ time + gender + wtkg + hemo + homo + drugs +
+                          karnof + oprior + z30 + zprior + race + str2 +
+                          symptom + treat + offtrt,
+                        data = surr_mlbart, group.by = surr_mlbart$pidnum,
+                        n.trees = 100, keepTrees = TRUE, combineChains = TRUE,
+                        seed = 42)
+          
+          y_gen <- Mbart$yhat.train.mean
+          surr_mlbart <- cbind(surr_mlbart, y_gen)
+          
+          if(use_weights){
+            babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             weights = rep(1/ngen, times = nrow(surr_mlbart)))
+          }
+          else{
+            babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             maxdepth = 5)
+          }
+          pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
+          MSE[(k-1)*10+i,match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$cd4 - pred_babart)^2)
+          tree_size[(k-1)*10+i,match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
+        }
+      }
+    }
+    tel <- tel + 1
+    print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+  }
+}
+)
+```
+
+Save/Load data
+
+```{r}
+# save MSE as CSV
+write.csv(x = MSE, file = paste("MSE","ACT",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palts*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+
+# save tree_size as CSV
+write.csv(x = tree_size, file = paste("TreeSize","ACT",if(baygen){paste0("baygen[",paste(ngensizes, collapse = ","),"]")}else{paste0("smearing[",paste0(palts*100,"%", collapse = ","),"]")}, if(use_weights){"weighted"}, sep = "_"))
+```
+
+Visualisation
+
+```{r}
+apply(X = MSE, MARGIN = 2, FUN = mean)
+apply(X = MSE, MARGIN = 2, FUN = sd)
+apply(X = tree_size, MARGIN = 2, FUN = mean)
+apply(X = tree_size, MARGIN = 2, FUN = sd)
+
+# MSE_long <- MSE %>% gather(key = "Method", value = "MSE")
+# MSE_long$Method <- as.factor(MSE_long$Method)
+par(mar = c(7.1, 4.1, 4.1, 2.1))
+boxplot(MSE, horizontal = F, las = 2)
+abline(h = median(MSE$Bart))
+
+# tree_size_long <- tree_size %>% gather(key = "Method", value = "MSE")
+# tree_size_long$Method <- as.factor(tree_size_long$Method)
+par(mar = c(7.1, 4.1, 4.1, 2.1))
+boxplot(tree_size, horizontal = F, las = 2)
+abline(h = median(MSE$Bart))
+```
+
+
+
+```{r}
+
+# 
+# tree_size <- MSE <- as.data.frame(matrix(data = NA, nrow = nfolds*nreps, ncol = 2 + length(ngensizes)))
+# 
+# colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree","Bart",paste0("BaBart_N*",ngensizes))
+# rownames(tree_size) <- rownames(MSE) <- paste0("rep",sort(rep(1:nreps, times = nfolds)),"_fold",rep(1:nfolds, times = nreps))
+# 
+# ## create object to save ids that have sometimes been switched
+# unique_test_ids <- list()
+# 
+# system.time(
+# for (k in 1:nreps){
+#   
+#   
+#   fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), size = nrow(data), replace = FALSE)
+#   
+#   for (i in 1:nfolds){
+#     
+#     traindat <- data[fold_ids != i, ]
+#     testdat <- data[fold_ids == i, ]
+#     
+#     ## check if all ids in testset are present in training set 
+#     unique_test_ids[[i]] <- unique(testdat$pidnum[!testdat$pidnum %in% traindat$pidnum]) 
+#     ## if not, move random row of unique test ids in from training to test sample 
+#     if (length(unique_test_ids[[i]]) > 0) {
+#      for (j in unique_test_ids[[i]]) {
+#         ids <- which(testdat$pidnum == j)
+#         id <- sample(ids, 1L)
+#         traindat <- rbind(traindat, testdat[id, ])
+#         testdat <- testdat[-id, ]
+#      }
+#     }
+#     
+#     # Fit a regualar GLMM tree
+#     glmtree <- lmertree(cd4 ~ time | (1 | pidnum) | gender + wtkg + hemo + homo +
+#                           drugs + karnof + oprior + z30 + zprior + race + str2 +
+#                           symptom + treat + offtrt, 
+#                         data = traindat, cluster = pidnum)
+# 
+#     pred_glmtree <- predict(glmtree, newdata = testdat, allow.new.levels = TRUE)
+# 
+#     MSE[(k-1)*10+i,1] <- mean((testdat$cd4 - pred_glmtree)^2)
+#     tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+#     
+#     # fit multilevel BART
+#     Mbart <- rbart_vi(cd4 ~ time + gender + wtkg + hemo + homo + drugs + karnof +
+#                         oprior + z30 + zprior + race + str2 + symptom + treat + 
+#                         offtrt,
+#        data = traindat, group.by = traindat$pidnum,
+#        test = testdat, group.by.test = testdat$pidnum,
+#        n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+#     
+#     posterior <- Mbart$yhat.train
+#     
+#     MSE[(k-1)*10+i,2] <- mean((testdat$cd4 - Mbart$yhat.test.mean)^2)
+#     
+#     # fit BaBart GLMM trees with different sizes of Ngen
+#     for(ngen in ngensizes){
+# 
+#       surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+#       
+#       if(use_weights){
+#         babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+#                              homo + drugs + karnof + oprior + z30 + zprior +
+#                              race + str2 + symptom + treat + offtrt,
+#                            cluster = pidnum, data = surr_mlbart,
+#                            weights = rep(1/ngen, times = nrow(surr_mlbart)))
+#       }
+#       else{
+#         babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+#                              homo + drugs + karnof + oprior + z30 + zprior +
+#                              race + str2 + symptom + treat + offtrt,
+#                            cluster = pidnum, data = surr_mlbart)
+#       }
+#       pred_babart <- predict(babart, newdata = testdat, allow.new.levels = TRUE)
+#       
+#       MSE[(k-1)*10+i,2+match(ngen,ngensizes)] <- mean((testdat$cd4 - pred_babart)^2)
+#       tree_size[(k-1)*10+i,2+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+#     }
+#     tel <- tel + 1
+#     print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+#   }
+# }
+# )
+# 
+# 
+# 
+
+
+```
+
+

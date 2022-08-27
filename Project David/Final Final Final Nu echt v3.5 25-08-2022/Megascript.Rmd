@@ -1,0 +1,803 @@
+---
+title: "BaBart_Superscript"
+author: "David Eleveld s1741225"
+date: "25-8-2022"
+output: pdf_document
+---
+
+# Setup
+
+## Packages
+
+```{r Packages, include=FALSE}
+library("haven")
+library("dbarts")
+library("glmertree")
+library("dplyr")
+library("here")
+library("multilevel")
+library("tidyverse")
+library("LongCART")
+```
+
+## Data generation functions
+
+```{r}
+## Bayesian data generation function
+## Returns X_gen, y_gen
+gendata_bay <- function(data, PPD, n_gen){
+  
+  if(nrow(data) != ncol(PPD)){stop("Amount of observations in PPD is different from data")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  x_gen <- data[index_gen,]
+  y_gen <- sapply(index_gen, function(i) sample(x = PPD[,i], size = 1))
+  
+  return(cbind(x_gen, y_gen))
+}
+
+
+## Smearing data generation function
+## Returns X_gen only
+gendata_smr <- function(data, palt = 0.5, n_gen, keeps = NaN){
+
+  if(palt < 0 | palt > 1){stop("palt must be bound between between 0 and 1")}
+  
+  index_gen <- sample.int(n = nrow(data), size = n_gen, replace = TRUE)
+  gen_data <- data[index_gen,]
+  
+  if(palt != 0){
+    for(i in 1:nrow(gen_data)){
+      
+      for(j in 1:ncol(gen_data)){
+        
+        if(names(gen_data[,j]) %in% keeps){next} # keeps cluster structure
+        
+        if(runif(1) <= palt){gen_data[i,j] <- sample(x = as.matrix(data[,j]), size = 1)}
+      }
+    }
+  }
+  
+  return(gen_data)
+}
+```
+
+## parameters
+
+```{r}
+nfolds <- 10
+nreps <- 10
+ngensizes <- c(1,5)
+palts <- c(0, 0.25, 0.5)
+BaSmear_design <- expand.grid(ngensizes, palts)
+```
+
+# Clustered Datasets
+
+## Safety data (N=1000)
+
+```{r Safety data}
+set.seed(42)
+data = read_sav(file.path(here(),"Project David","Safety.sav"))
+
+# ## Create objects for saving results
+tree_size <- MSE <- as.data.frame(matrix(data = NA, 
+                                         nrow = nfolds*nreps, 
+                                         ncol = 3 + 
+                                           length(ngensizes) +
+                                           nrow(BaSmear_design) + 
+                                           length(ngensizes[ngensizes != 1]) +
+                                           nrow(BaSmear_design[!(BaSmear_design[,1] %in% 1),])))
+colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree", "Bart", "BA",
+                                          paste0("BaBart_N*",ngensizes), 
+                                          paste0("Smearing_N*",BaSmear_design[,1], "_palt=",BaSmear_design[,2]),
+                                          paste0("BaBart_N*", ngensizes[ngensizes != 1], "_Nw"),
+                                          paste0("Smearing_N*",BaSmear_design[!(BaSmear_design[,1] %in% 1),][,1], "_palt=", 
+                                                 BaSmear_design[!(BaSmear_design[,1] %in% 1),][,2], "_Nw"))
+tel <- 0
+system.time(
+for (k in 1:nreps){
+  
+  # Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+
+  for (i in 1:nfolds){
+    
+    # train-test split
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    # Check whether all factor levels in test are also in train, else omit from test
+    for (fact in c("street")) {
+      levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
+      if (!all(levs)) {
+        testdat <- testdat[-which(!testdat[ , fact] %in% unique(testdat[ , fact])[levs]), ]
+        print(paste0("Levels of fold ", i, " omitted from test data: ", 
+                             unique(testdat[ , fact])[!levs]))
+      }
+    }
+    
+    ###### Fit a regualar GLMM tree ######
+    glmtree <- lmertree(unsafe ~ 1 | (1|street) | age + sex + economic + crowded,
+                     data = traindat)
+
+    pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
+
+    MSE[(k-1)*10+i,1] <- mean((testdat$unsafe - pred_glmtree)^2)
+    tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+
+    ######  fit multilevel BART ######
+    Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+       data = traindat, group.by = traindat$street,
+       test = testdat, group.by.test = testdat$street,
+       combineChains = TRUE, seed = 42, verbose = FALSE)
+
+    posterior <- Mbart$yhat.train
+
+    MSE[(k-1)*10+i,2] <- mean((testdat$unsafe - Mbart$yhat.test.mean)^2)
+
+    # fit BaBart GLMM trees with different sizes of Ngen using Baygen and smearing
+      for(ngen in ngensizes){
+        
+        # Bayesian data generation
+        surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+
+        ###### Baygen Weighted ######
+        babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                        data = surr_mlbart,
+                        weights = rep(1/ngen, times = nrow(surr_mlbart)))
+        
+        pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
+        tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+
+        ###### Baygen NOT Weighted ######
+        if(ngen != 1){
+          babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                          data = surr_mlbart)
+
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$unsafe - pred_babart)^2)# :s
+          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        }
+
+        # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
+        for(palt in palts){
+          surr_mlbart <- gendata_smr(as_tibble(traindat), palt, ngen * nrow(traindat), keeps = c("street"))
+
+          Mbart <- rbart_vi(unsafe ~ age + sex + economic + crowded,
+                             data = surr_mlbart, group.by = surr_mlbart$street,
+                             combineChains = TRUE, seed = 42, verbose = FALSE)
+          
+          y_gen <- Mbart$yhat.train.mean
+          
+          surr_mlbart <- cbind(surr_mlbart, y_gen)
+
+          ###### Smearing Weighted ######
+          babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                          data = surr_mlbart,
+                          weights = rep(1/ngen, times = nrow(surr_mlbart)))
+          
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
+          tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
+
+          ##### Smearing NOT Weighted ######
+          if(ngen != 1){
+            babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+                           data = surr_mlbart)
+            
+            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$unsafe - pred_babart)^2)
+            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          }
+        }
+      }
+    tel <- tel + 1
+    print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+  }
+}
+)
+
+```
+
+## ACT data (N=1000)
+
+```{r ACT data}
+set.seed(42)
+data(ACTG175)
+## Remove missings
+ACTG175 <- ACTG175[!is.na(ACTG175$cd4), ]
+sapply(data, class)
+
+## Correct coding of factors
+ACTG175$pidnum <- factor(ACTG175$pidnum) 
+ACTG175$hemo <- factor(ACTG175$hemo) 
+ACTG175$homo <- factor(ACTG175$homo)
+ACTG175$drugs <- factor(ACTG175$drugs)
+ACTG175$oprior <- factor(ACTG175$oprior)
+ACTG175$z30 <- factor(ACTG175$z30)
+ACTG175$zprior <- factor(ACTG175$zprior)
+ACTG175$race <- factor(ACTG175$race)
+ACTG175$str2 <- factor(ACTG175$str2)
+ACTG175$symptom <- factor(ACTG175$symptom)
+ACTG175$treat <- factor(ACTG175$treat)
+ACTG175$offtrt <- factor(ACTG175$offtrt)
+
+data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 377),]
+rm(ACTG175)
+
+# ## Create objects for saving results
+tree_size <- MSE <- as.data.frame(matrix(data = NA, 
+                                         nrow = nfolds*nreps, 
+                                         ncol = 3 + 
+                                           length(ngensizes) +
+                                           nrow(BaSmear_design) + 
+                                           length(ngensizes[ngensizes != 1]) +
+                                           nrow(BaSmear_design[!(BaSmear_design[,1] %in% 1),])))
+colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree", "Bart", "BA",
+                                          paste0("BaBart_N*",ngensizes), 
+                                          paste0("Smearing_N*",BaSmear_design[,1], "_palt=",BaSmear_design[,2]),
+                                          paste0("BaBart_N*", ngensizes[ngensizes != 1], "_Nw"),
+                                          paste0("Smearing_N*",BaSmear_design[!(BaSmear_design[,1] %in% 1),][,1], "_palt=", 
+                                                 BaSmear_design[!(BaSmear_design[,1] %in% 1),][,2], "_Nw"))
+tel <- 0
+system.time(
+for (k in 1:nreps){
+  
+  # Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+
+  for (i in 1:nfolds){
+    
+    # train-test split
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    # Check whether all factor levels in test are also in train, else omit from test
+    for (fact in c("pidnum")) {
+      levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
+      if (!all(levs)) {
+        testdat <- testdat[-which(!testdat[ , fact] %in% unique(testdat[ , fact])[levs]), ]
+        print(paste0("Levels of fold ", i, " omitted from test data: ", 
+                             unique(testdat[ , fact])[!levs]))
+      }
+    }
+    
+    ###### Fit a regualar GLMM tree ######
+    glmtree <- lmertree(cd4 ~ time | (1 | pidnum) | gender + wtkg + hemo + homo +
+                          drugs + karnof + oprior + z30 + zprior + race + str2 +
+                          symptom + treat + offtrt, 
+                        data = traindat, cluster = pidnum)
+
+    pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
+
+    MSE[(k-1)*10+i,1] <- mean((testdat$cd4 - pred_glmtree)^2)
+    tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+
+    ######  fit multilevel BART ######
+    Mbart <- rbart_vi(cd4 ~ time + gender + wtkg + hemo + homo + drugs +
+                          karnof + oprior + z30 + zprior + race + str2 +
+                          symptom + treat + offtrt,
+                        data = traindat, group.by = traindat$pidnum,
+                        test = testdat, group.by.test = testdat$pidnum,
+                      combineChains = TRUE, seed = 42)
+
+    posterior <- Mbart$yhat.train
+
+    MSE[(k-1)*10+i,2] <- mean((testdat$cd4 - Mbart$yhat.test.mean)^2)
+
+    # fit BaBart GLMM trees with different sizes of Ngen using Baygen and smearing
+      for(ngen in ngensizes){
+        
+        # Bayesian data generation
+        surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+
+        ###### Baygen Weighted ######
+        babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             weights = rep(1/ngen, times = nrow(surr_mlbart)))
+        
+        pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$cd4 - pred_babart)^2)
+        tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+
+        ###### Baygen NOT Weighted ######
+        if(ngen != 1){
+          babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             maxdepth = 5)
+
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$cd4 - pred_babart)^2)# :s
+          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        }
+
+        # smearing HIER MOET DE CLUSTERSTRUCTUUR WORDEN BEHOUDEN
+        for(palt in palts){
+          surr_mlbart <- gendata_smr(as_tibble(traindat), palt, ngen * nrow(traindat), keeps = c("pidnum"))
+
+          Mbart <- rbart_vi(cd4 ~ time + gender + wtkg + hemo + homo + drugs +
+                          karnof + oprior + z30 + zprior + race + str2 +
+                          symptom + treat + offtrt,
+                        data = surr_mlbart, group.by = surr_mlbart$pidnum,
+                        combineChains = TRUE,
+                        seed = 42)
+          
+          y_gen <- Mbart$yhat.train.mean
+          
+          surr_mlbart <- cbind(surr_mlbart, y_gen)
+
+          ###### Smearing Weighted ######
+          babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             weights = rep(1/ngen, times = nrow(surr_mlbart)))
+          
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$cd4 - pred_babart)^2)
+          tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
+
+          ##### Smearing NOT Weighted ######
+          if(ngen != 1){
+            babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+                               homo + drugs + karnof + oprior + z30 + zprior + 
+                               race + str2 + symptom + treat + offtrt,
+                             cluster = pidnum, data = surr_mlbart,
+                             maxdepth = 5)
+            
+            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$cd4 - pred_babart)^2)
+            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          }
+        }
+      }
+    tel <- tel + 1
+    print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+  }
+}
+)
+
+```
+
+## ECLSK kids
+### math (N=1000)
+
+```{r}
+set.seed(42)
+load(file.path(here(),"Project David","ECLSK","Math ability data.Rdata"))
+data <- mathdata[mathdata$CHILDID %in% sample(x = unique(mathdata$CHILDID), size = 200),]
+sapply(X = data, FUN = class)
+table(data$RACE)
+data$CHILDID <- factor(data$CHILDID)
+rm(mathdata)
+
+tel <- 0
+system.time(
+for (k in 1:nreps){
+  
+  # Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+
+  for (i in 1:nfolds){
+    
+    # train-test split
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    # Check whether all factor levels in test are also in train, else omit from test
+    for (fact in c("CHILDID","RACE")) {
+      levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
+      if (!all(levs)) {
+        testdat <- testdat[-which(!testdat[ , fact] %in% unique(testdat[ , fact])[levs]), ]
+        print(paste0("Levels of fold ", i, " omitted from test data: ", 
+                             unique(testdat[ , fact])[!levs]))
+      }
+    }
+    
+    ###### Fit a regualar GLMM tree ######
+    glmtree <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
+
+    pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
+
+    MSE[(k-1)*10+i,1] <- mean((testdat$score - pred_glmtree)^2)
+    tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+
+    ######  fit multilevel BART ######
+    Mbart <- rbart_vi(score ~ GENDER + RACE + WKSESL + C1GMOTOR + C1FMOTOR + 
+                          T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
+                          AGEBASELINE + months,
+         data = traindat, group.by = traindat$CHILDID,
+         test = testdat, group.by.test = testdat$CHILDID,
+         combineChains = TRUE, seed = 42)
+
+    posterior <- Mbart$yhat.train
+
+    MSE[(k-1)*10+i,2] <- mean((testdat$score - Mbart$yhat.test.mean)^2)
+
+    # fit BaBart GLMM trees with different sizes of Ngen using Baygen and smearing
+      for(ngen in ngensizes){
+        
+        # Bayesian data generation
+        surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+
+        ###### Baygen Weighted ######
+        babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_mlbart,
+                      weights = rep(1/ngen, times = nrow(surr_mlbart)))
+        
+        pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
+        tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+
+        ###### Baygen NOT Weighted ######
+        if(ngen != 1){
+          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_mlbart)
+
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
+          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        }
+
+        # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
+        for(palt in palts){
+          surr_mlbart <- gendata_smr(as_tibble(traindat), palt, ngen * nrow(traindat), keeps = c("CHILDID"))
+          
+          # Dit klopt toch niet?? ik snap het iig niet
+          # Mbart <- rbart_vi(score ~ months + GENDER + RACE + WKSESL + C1GMOTOR + 
+          #             C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+          #             P1FIRKDG + AGEBASELINE,  
+          #             data = traindat, test = surr_mlbart, group.by = CHILDID,
+          #             verbose = FALSE, combineChains = TRUE)
+          #
+          # y_gen <- colMeans(brt$yhat.test)
+          # surr_dat <- cbind(surr_dat, y_gen)
+          
+                    
+          Mbart <- rbart_vi(score ~ GENDER + RACE + WKSESL + C1GMOTOR + C1FMOTOR + 
+                          T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
+                          AGEBASELINE + months,
+                       data = surr_mlbart, group.by = surr_mlbart$CHILDID,
+                       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+          
+          y_gen <- Mbart$yhat.train.mean
+          
+          surr_mlbart <- cbind(surr_mlbart, y_gen)
+
+          ###### Smearing Weighted ######
+          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                        data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
+          
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$score - pred_babart)^2)
+          tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
+
+          ##### Smearing NOT Weighted ######
+          if(ngen != 1){
+            babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                        data = surr_mlbart)
+            
+            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
+            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          }
+        }
+      }
+    tel <- tel + 1
+    print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+  }
+}
+)
+```
+
+### reading (N=1000)
+
+```{r}
+set.seed(42)
+load(file.path(here(),"Project David","ECLSK","Reading ability data.Rdata"))
+data <- readdata[readdata$CHILDID %in% sample(x = unique(readdata$CHILDID), size = 200),]
+data$asmtmm <- factor(data$asmtmm)
+data$CHILDID <- factor(data$CHILDID)
+rm(readdata)
+
+tel <- 0
+system.time(
+for (k in 1:nreps){
+  
+  # Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+
+  for (i in 1:nfolds){
+    
+    # train-test split
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    # Check whether all factor levels in test are also in train, else omit from test
+    for (fact in c("CHILDID","RACE")) {
+      levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
+      if (!all(levs)) {
+        testdat <- testdat[-which(!testdat[ , fact] %in% unique(testdat[ , fact])[levs]), ]
+        print(paste0("Levels of fold ", i, " omitted from test data: ", 
+                             unique(testdat[ , fact])[!levs]))
+      }
+    }
+    
+    ###### Fit a regualar GLMM tree ######
+    glmtree <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
+
+    pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
+
+    MSE[(k-1)*10+i,1] <- mean((testdat$score - pred_glmtree)^2)
+    tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+
+    ######  fit multilevel BART ######
+    Mbart <- rbart_vi(score ~ GENDER + RACE + WKSESL + C1GMOTOR + C1FMOTOR + 
+                          T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
+                          AGEBASELINE + months,
+         data = traindat, group.by = traindat$CHILDID,
+         test = testdat, group.by.test = testdat$CHILDID,
+         combineChains = TRUE, seed = 42)
+
+    posterior <- Mbart$yhat.train
+
+    MSE[(k-1)*10+i,2] <- mean((testdat$score - Mbart$yhat.test.mean)^2)
+
+    # fit BaBart GLMM trees with different sizes of Ngen using Baygen and smearing
+      for(ngen in ngensizes){
+        
+        # Bayesian data generation
+        surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+
+        ###### Baygen Weighted ######
+        babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_mlbart,
+                      weights = rep(1/ngen, times = nrow(surr_mlbart)))
+        
+        pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
+        tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+
+        ###### Baygen NOT Weighted ######
+        if(ngen != 1){
+          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_mlbart)
+
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
+          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        }
+
+        # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
+        for(palt in palts){
+          surr_mlbart <- gendata_smr(as_tibble(traindat), palt, ngen * nrow(traindat), keeps = c("CHILDID"))
+          
+          # Dit klopt toch niet?? ik snap het iig niet
+          # Mbart <- rbart_vi(score ~ months + GENDER + RACE + WKSESL + C1GMOTOR + 
+          #             C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+          #             P1FIRKDG + AGEBASELINE,  
+          #             data = traindat, test = surr_mlbart, group.by = CHILDID,
+          #             verbose = FALSE, combineChains = TRUE)
+          #
+          # y_gen <- colMeans(brt$yhat.test)
+          # surr_dat <- cbind(surr_dat, y_gen)
+          
+                    
+          Mbart <- rbart_vi(score ~ GENDER + RACE + WKSESL + C1GMOTOR + C1FMOTOR + 
+                          T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
+                          AGEBASELINE + months,
+                       data = surr_mlbart, group.by = surr_mlbart$CHILDID,
+                       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+          
+          y_gen <- Mbart$yhat.train.mean
+          
+          surr_mlbart <- cbind(surr_mlbart, y_gen)
+
+          ###### Smearing Weighted ######
+          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                        data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
+          
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$score - pred_babart)^2)
+          tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
+
+          ##### Smearing NOT Weighted ######
+          if(ngen != 1){
+            babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                        data = surr_mlbart)
+            
+            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
+            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          }
+        }
+      }
+    tel <- tel + 1
+    print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+  }
+}
+)
+```
+
+### science (N=999)
+
+```{r}
+set.seed(42)
+load(file.path(here(),"Project David","ECLSK","Science ability data.Rdata"))
+data <- sciedata[sciedata$CHILDID %in% sample(x = unique(sciedata$CHILDID), size = 333),]
+data$asmtmm <- as.factor(data$asmtmm)
+rm(sciedata)
+
+tel <- 0
+system.time(
+for (k in 1:nreps){
+  
+  # Generate train-test splits
+  fold_ids <- sample(rep(1:nfolds, times = ceiling(nrow(data)/nfolds)), 
+                     size = nrow(data), replace = FALSE)
+
+  for (i in 1:nfolds){
+    
+    # train-test split
+    traindat <- data[fold_ids != i, ]
+    testdat <- data[fold_ids == i, ]
+    
+    # Check whether all factor levels in test are also in train, else omit from test
+    for (fact in c("CHILDID","RACE")) {
+      levs <- unique(testdat[ , fact]) %in% unique(traindat[ , fact])
+      if (!all(levs)) {
+        testdat <- testdat[-which(!testdat[ , fact] %in% unique(testdat[ , fact])[levs]), ]
+        print(paste0("Levels of fold ", i, " omitted from test data: ", 
+                             unique(testdat[ , fact])[!levs]))
+      }
+    }
+    
+    ###### Fit a regualar GLMM tree ######
+    glmtree <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
+
+    pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
+
+    MSE[(k-1)*10+i,1] <- mean((testdat$score - pred_glmtree)^2)
+    tree_size[(k-1)*10+i,1] <- (length(glmtree$tree)-1)/2
+
+    ######  fit multilevel BART ######
+    Mbart <- rbart_vi(score ~ GENDER + RACE + WKSESL + C1GMOTOR + C1FMOTOR + 
+                          T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
+                          AGEBASELINE + months,
+         data = traindat, group.by = traindat$CHILDID,
+         test = testdat, group.by.test = testdat$CHILDID,
+         combineChains = TRUE, seed = 42)
+
+    posterior <- Mbart$yhat.train
+
+    MSE[(k-1)*10+i,2] <- mean((testdat$score - Mbart$yhat.test.mean)^2)
+
+    # fit BaBart GLMM trees with different sizes of Ngen using Baygen and smearing
+      for(ngen in ngensizes){
+        
+        # Bayesian data generation
+        surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+
+        ###### Baygen Weighted ######
+        babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_mlbart,
+                      weights = rep(1/ngen, times = nrow(surr_mlbart)))
+        
+        pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
+        tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
+
+        ###### Baygen NOT Weighted ######
+        if(ngen != 1){
+          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                      P1FIRKDG + AGEBASELINE, data = surr_mlbart)
+
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
+          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        }
+
+        # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
+        for(palt in palts){
+          surr_mlbart <- gendata_smr(as_tibble(traindat), palt, ngen * nrow(traindat), keeps = c("CHILDID"))
+          
+          # Dit klopt toch niet?? ik snap het iig niet
+          # Mbart <- rbart_vi(score ~ months + GENDER + RACE + WKSESL + C1GMOTOR + 
+          #             C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+          #             P1FIRKDG + AGEBASELINE,  
+          #             data = traindat, test = surr_mlbart, group.by = CHILDID,
+          #             verbose = FALSE, combineChains = TRUE)
+          #
+          # y_gen <- colMeans(brt$yhat.test)
+          # surr_dat <- cbind(surr_dat, y_gen)
+          
+                    
+          Mbart <- rbart_vi(score ~ GENDER + RACE + WKSESL + C1GMOTOR + C1FMOTOR + 
+                          T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
+                          AGEBASELINE + months,
+                       data = surr_mlbart, group.by = surr_mlbart$CHILDID,
+                       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+          
+          y_gen <- Mbart$yhat.train.mean
+          
+          surr_mlbart <- cbind(surr_mlbart, y_gen)
+
+          ###### Smearing Weighted ######
+          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                        data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
+          
+          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$score - pred_babart)^2)
+          tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
+
+          ##### Smearing NOT Weighted ######
+          if(ngen != 1){
+            babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                        data = surr_mlbart)
+            
+            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
+            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          }
+        }
+      }
+    tel <- tel + 1
+    print(paste0("[",round((tel)/(nreps*nfolds)*100),"%]"))
+  }
+}
+)
+```
+
+## ECLSK School
+
+```{r}
+
+```
+
+## Marriage
+
+
+
+
+
+
+
+
+
+
+
+
