@@ -67,7 +67,7 @@ gendata_smr <- function(data, palt = 0.5, n_gen, keeps = NaN){
 ```{r}
 nfolds <- 10
 nreps <- 10
-ngensizes <- c(1,5)
+ngensizes <- c(1,5,10)
 palts <- c(0, 0.25, 0.5)
 BaSmear_design <- expand.grid(ngensizes, palts)
 ```
@@ -92,7 +92,7 @@ colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree", "Bart", "BA",
                                           paste0("BaBart_N*",ngensizes), 
                                           paste0("Smearing_N*",BaSmear_design[,1], "_palt=",BaSmear_design[,2]),
                                           paste0("BaBart_N*", ngensizes[ngensizes != 1], "_Nw"),
-                                          paste0("Smearing_N*",BaSmear_design[!(BaSmear_design[,1] %in% 1),][,1], "_palt=", 
+                                          paste0("Smearing_N*",BaSmear_design[!(BaSmear_design[,1] %in% 1),][,1], "_palt=",
                                                  BaSmear_design[!(BaSmear_design[,1] %in% 1),][,2], "_Nw"))
 tel <- 0
 system.time(
@@ -153,15 +153,15 @@ for (k in 1:nreps){
         MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
         tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
 
-        ###### Baygen NOT Weighted ######
-        if(ngen != 1){
-          babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
-                          data = surr_mlbart)
-
-          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$unsafe - pred_babart)^2)# :s
-          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
-        }
+        # ###### Baygen NOT Weighted ######
+        # if(ngen != 1){
+        #   babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+        #                   data = surr_mlbart)
+        # 
+        #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        #   MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$unsafe - pred_babart)^2)# :s
+        #   tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        # }
 
         # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
         for(palt in palts){
@@ -184,15 +184,15 @@ for (k in 1:nreps){
           MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$unsafe - pred_babart)^2)
           tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
 
-          ##### Smearing NOT Weighted ######
-          if(ngen != 1){
-            babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
-                           data = surr_mlbart)
-            
-            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$unsafe - pred_babart)^2)
-            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
-          }
+          # ##### Smearing NOT Weighted ######
+          # if(ngen != 1){
+          #   babart <- lmertree(y_gen ~ 1 | (1|street) | age + sex + economic + crowded,
+          #                  data = surr_mlbart)
+          #   
+          #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          #   MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$unsafe - pred_babart)^2)
+          #   tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          # }
         }
       }
     tel <- tel + 1
@@ -201,6 +201,8 @@ for (k in 1:nreps){
 }
 )
 
+write.csv(x = MSE, file = "Safety_MSE.txt")
+write.csv(x = tree_size, file = "Safety_TreeSize.txt")
 ```
 
 ## ACT data (N=1000)
@@ -308,18 +310,18 @@ for (k in 1:nreps){
         MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$cd4 - pred_babart)^2)
         tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
 
-        ###### Baygen NOT Weighted ######
-        if(ngen != 1){
-          babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
-                               homo + drugs + karnof + oprior + z30 + zprior + 
-                               race + str2 + symptom + treat + offtrt,
-                             cluster = pidnum, data = surr_mlbart,
-                             maxdepth = 5)
-
-          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$cd4 - pred_babart)^2)# :s
-          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
-        }
+        # ###### Baygen NOT Weighted ######
+        # if(ngen != 1){
+        #   babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+        #                        homo + drugs + karnof + oprior + z30 + zprior + 
+        #                        race + str2 + symptom + treat + offtrt,
+        #                      cluster = pidnum, data = surr_mlbart,
+        #                      maxdepth = 5)
+        # 
+        #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        #   MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$cd4 - pred_babart)^2)# :s
+        #   tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        # }
 
         # smearing HIER MOET DE CLUSTERSTRUCTUUR WORDEN BEHOUDEN
         for(palt in palts){
@@ -347,18 +349,18 @@ for (k in 1:nreps){
           MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$cd4 - pred_babart)^2)
           tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
 
-          ##### Smearing NOT Weighted ######
-          if(ngen != 1){
-            babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
-                               homo + drugs + karnof + oprior + z30 + zprior + 
-                               race + str2 + symptom + treat + offtrt,
-                             cluster = pidnum, data = surr_mlbart,
-                             maxdepth = 5)
-            
-            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$cd4 - pred_babart)^2)
-            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
-          }
+          # ##### Smearing NOT Weighted ######
+          # if(ngen != 1){
+          #   babart <- lmertree(y_gen ~ time | (1 | pidnum) | gender + wtkg + hemo +
+          #                      homo + drugs + karnof + oprior + z30 + zprior + 
+          #                      race + str2 + symptom + treat + offtrt,
+          #                    cluster = pidnum, data = surr_mlbart,
+          #                    maxdepth = 5)
+          #   
+          #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          #   MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$cd4 - pred_babart)^2)
+          #   tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          # }
         }
       }
     tel <- tel + 1
