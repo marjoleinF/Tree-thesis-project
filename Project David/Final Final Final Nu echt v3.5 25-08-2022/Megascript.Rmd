@@ -369,6 +369,12 @@ for (k in 1:nreps){
 }
 )
 
+write.csv(x = MSE, file = "ACT_MSE.txt")
+write.csv(x = tree_size, file = "ACT_TreeSize.txt")
+
+boxplot(MSE)
+boxplot(tree_size)
+
 ```
 
 ## ECLSK kids
