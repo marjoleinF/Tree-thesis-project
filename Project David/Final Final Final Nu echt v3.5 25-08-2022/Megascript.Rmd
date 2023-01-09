@@ -18,6 +18,9 @@ library("here")
 library("multilevel")
 library("tidyverse")
 library("LongCART")
+library("reshape2")
+library("rempsyc")
+library("readr")
 ```
 
 ## Data generation functions
@@ -371,10 +374,6 @@ for (k in 1:nreps){
 
 write.csv(x = MSE, file = "ACT_MSE.txt")
 write.csv(x = tree_size, file = "ACT_TreeSize.txt")
-
-boxplot(MSE)
-boxplot(tree_size)
-
 ```
 
 ## ECLSK kids
@@ -389,6 +388,22 @@ table(data$RACE)
 data$CHILDID <- factor(data$CHILDID)
 rm(mathdata)
 
+## Create objects for saving results
+tree_size <- MSE <- as.data.frame(matrix(data = NA, 
+                                         nrow = nfolds*nreps, 
+                                         ncol = 3 + 
+                                           length(ngensizes) +
+                                           nrow(BaSmear_design) + 
+                                           length(ngensizes[ngensizes != 1]) +
+                                           nrow(BaSmear_design[!(BaSmear_design[,1] %in% 1),])))
+colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree", "Bart", "BA",
+                                          paste0("BaBart_N*",ngensizes), 
+                                          paste0("Smearing_N*",BaSmear_design[,1], "_palt=",BaSmear_design[,2]),
+                                          paste0("BaBart_N*", ngensizes[ngensizes != 1], "_Nw"),
+                                          paste0("Smearing_N*",BaSmear_design[!(BaSmear_design[,1] %in% 1),][,1], "_palt=",
+                                                 BaSmear_design[!(BaSmear_design[,1] %in% 1),][,2], "_Nw"))
+
+
 tel <- 0
 system.time(
 for (k in 1:nreps){
@@ -417,7 +432,7 @@ for (k in 1:nreps){
     ###### Fit a regualar GLMM tree ######
     glmtree <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
                       C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
+                      P1FIRKDG + AGEBASELINE, data = traindat)
 
     pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
 
@@ -452,16 +467,16 @@ for (k in 1:nreps){
         MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
         tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
 
-        ###### Baygen NOT Weighted ######
-        if(ngen != 1){
-          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
-                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                      P1FIRKDG + AGEBASELINE, data = surr_mlbart)
-
-          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
-          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
-        }
+        # ###### Baygen NOT Weighted ######
+        # if(ngen != 1){
+        #   babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+        #               C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+        #               P1FIRKDG + AGEBASELINE, data = surr_mlbart)
+        # 
+        #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        #   MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
+        #   tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        # }
 
         # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
         for(palt in palts){
@@ -482,7 +497,7 @@ for (k in 1:nreps){
                           T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
                           AGEBASELINE + months,
                        data = surr_mlbart, group.by = surr_mlbart$CHILDID,
-                       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+                       keepTrees = TRUE, combineChains = TRUE, seed = 42)
           
           y_gen <- Mbart$yhat.train.mean
           
@@ -491,24 +506,24 @@ for (k in 1:nreps){
           ###### Smearing Weighted ######
           babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
                           C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                          P1FIRKDG + AGEBASELINE,
                         data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
           
           pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
           MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$score - pred_babart)^2)
           tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
 
-          ##### Smearing NOT Weighted ######
-          if(ngen != 1){
-            babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
-                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
-                        data = surr_mlbart)
-            
-            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
-            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
-          }
+          # ##### Smearing NOT Weighted ######
+          # if(ngen != 1){
+          #   babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+          #                 C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+          #                 P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+          #               data = surr_mlbart)
+          #   
+          #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          #   MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
+          #   tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          # }
         }
       }
     tel <- tel + 1
@@ -516,6 +531,9 @@ for (k in 1:nreps){
   }
 }
 )
+
+write.csv(x = MSE, file = "ECLSKmath_MSE.txt")
+write.csv(x = tree_size, file = "ECLSKmath_TreeSize.txt")
 ```
 
 ### reading (N=1000)
@@ -528,6 +546,21 @@ data$asmtmm <- factor(data$asmtmm)
 data$CHILDID <- factor(data$CHILDID)
 rm(readdata)
 
+## Create objects for saving results
+tree_size <- MSE <- as.data.frame(matrix(data = NA, 
+                                         nrow = nfolds*nreps, 
+                                         ncol = 3 + 
+                                           length(ngensizes) +
+                                           nrow(BaSmear_design) + 
+                                           length(ngensizes[ngensizes != 1]) +
+                                           nrow(BaSmear_design[!(BaSmear_design[,1] %in% 1),])))
+colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree", "Bart", "BA",
+                                          paste0("BaBart_N*",ngensizes), 
+                                          paste0("Smearing_N*",BaSmear_design[,1], "_palt=",BaSmear_design[,2]),
+                                          paste0("BaBart_N*", ngensizes[ngensizes != 1], "_Nw"),
+                                          paste0("Smearing_N*",BaSmear_design[!(BaSmear_design[,1] %in% 1),][,1], "_palt=",
+                                                 BaSmear_design[!(BaSmear_design[,1] %in% 1),][,2], "_Nw"))
+
 tel <- 0
 system.time(
 for (k in 1:nreps){
@@ -556,7 +589,7 @@ for (k in 1:nreps){
     ###### Fit a regualar GLMM tree ######
     glmtree <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
                       C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
+                      P1FIRKDG + AGEBASELINE, data = traindat)
 
     pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
 
@@ -591,16 +624,16 @@ for (k in 1:nreps){
         MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
         tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
 
-        ###### Baygen NOT Weighted ######
-        if(ngen != 1){
-          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
-                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                      P1FIRKDG + AGEBASELINE, data = surr_mlbart)
-
-          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
-          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
-        }
+        # ###### Baygen NOT Weighted ######
+        # if(ngen != 1){
+        #   babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+        #               C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+        #               P1FIRKDG + AGEBASELINE, data = surr_mlbart)
+        # 
+        #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        #   MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
+        #   tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        # }
 
         # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
         for(palt in palts){
@@ -621,7 +654,7 @@ for (k in 1:nreps){
                           T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
                           AGEBASELINE + months,
                        data = surr_mlbart, group.by = surr_mlbart$CHILDID,
-                       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+                       keepTrees = TRUE, combineChains = TRUE, seed = 42)
           
           y_gen <- Mbart$yhat.train.mean
           
@@ -630,24 +663,24 @@ for (k in 1:nreps){
           ###### Smearing Weighted ######
           babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
                           C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                          P1FIRKDG + AGEBASELINE,
                         data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
           
           pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
           MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$score - pred_babart)^2)
           tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
 
-          ##### Smearing NOT Weighted ######
-          if(ngen != 1){
-            babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
-                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
-                        data = surr_mlbart)
-            
-            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
-            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
-          }
+          # ##### Smearing NOT Weighted ######
+          # if(ngen != 1){
+          #   babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+          #                 C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+          #                 P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+          #               data = surr_mlbart)
+          #   
+          #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          #   MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
+          #   tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          # }
         }
       }
     tel <- tel + 1
@@ -655,6 +688,9 @@ for (k in 1:nreps){
   }
 }
 )
+
+write.csv(x = MSE, file = "ECLSKreading_MSE.txt")
+write.csv(x = tree_size, file = "ECLSKreading_TreeSize.txt")
 ```
 
 ### science (N=999)
@@ -666,6 +702,21 @@ data <- sciedata[sciedata$CHILDID %in% sample(x = unique(sciedata$CHILDID), size
 data$asmtmm <- as.factor(data$asmtmm)
 rm(sciedata)
 
+# ## Create objects for saving results
+tree_size <- MSE <- as.data.frame(matrix(data = NA, 
+                                         nrow = nfolds*nreps, 
+                                         ncol = 3 + 
+                                           length(ngensizes) +
+                                           nrow(BaSmear_design) + 
+                                           length(ngensizes[ngensizes != 1]) +
+                                           nrow(BaSmear_design[!(BaSmear_design[,1] %in% 1),])))
+colnames(tree_size) <- colnames(MSE) <- c("GLMM_tree", "Bart", "BA",
+                                          paste0("BaBart_N*",ngensizes), 
+                                          paste0("Smearing_N*",BaSmear_design[,1], "_palt=",BaSmear_design[,2]),
+                                          paste0("BaBart_N*", ngensizes[ngensizes != 1], "_Nw"),
+                                          paste0("Smearing_N*",BaSmear_design[!(BaSmear_design[,1] %in% 1),][,1], "_palt=",
+                                                 BaSmear_design[!(BaSmear_design[,1] %in% 1),][,2], "_Nw"))
+
 tel <- 0
 system.time(
 for (k in 1:nreps){
@@ -694,7 +745,7 @@ for (k in 1:nreps){
     ###### Fit a regualar GLMM tree ######
     glmtree <- lmertree(score ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
                       C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                      P1FIRKDG + AGEBASELINE, data = traindat, cluster = CHILDID)
+                      P1FIRKDG + AGEBASELINE, data = traindat)
 
     pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
 
@@ -729,16 +780,16 @@ for (k in 1:nreps){
         MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$score - pred_babart)^2)
         tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
 
-        ###### Baygen NOT Weighted ######
-        if(ngen != 1){
-          babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
-                      C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                      P1FIRKDG + AGEBASELINE, data = surr_mlbart)
-
-          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
-          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
-        }
+        # ###### Baygen NOT Weighted ######
+        # if(ngen != 1){
+        #   babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+        #               C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+        #               P1FIRKDG + AGEBASELINE, data = surr_mlbart)
+        # 
+        #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        #   MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$score - pred_babart)^2)# :s
+        #   tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        # }
 
         # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
         for(palt in palts){
@@ -759,7 +810,7 @@ for (k in 1:nreps){
                           T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + P1FIRKDG + 
                           AGEBASELINE + months,
                        data = surr_mlbart, group.by = surr_mlbart$CHILDID,
-                       n.trees = 100, keepTrees = TRUE, combineChains = TRUE, seed = 42)
+                       keepTrees = TRUE, combineChains = TRUE, seed = 42)
           
           y_gen <- Mbart$yhat.train.mean
           
@@ -768,24 +819,24 @@ for (k in 1:nreps){
           ###### Smearing Weighted ######
           babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
                           C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+                          P1FIRKDG + AGEBASELINE,
                         data = surr_mlbart, weights = rep(1/ngen, times = nrow(surr_mlbart)))
           
           pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
           MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$score - pred_babart)^2)
           tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
 
-          ##### Smearing NOT Weighted ######
-          if(ngen != 1){
-            babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
-                          C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
-                          P1FIRKDG + AGEBASELINE, cluster = CHILDID,
-                        data = surr_mlbart)
-            
-            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
-            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
-          }
+          # ##### Smearing NOT Weighted ######
+          # if(ngen != 1){
+          #   babart <- lmertree(y_gen ~ 1 | (1|CHILDID) | months + GENDER + RACE + WKSESL + C1GMOTOR + 
+          #                 C1FMOTOR + T1INTERN + T1EXTERN + T1INTERP + T1CONTRO + 
+          #                 P1FIRKDG + AGEBASELINE, cluster = CHILDID,
+          #               data = surr_mlbart)
+          #   
+          #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          #   MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$score - pred_babart)^2)
+          #   tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          # }
         }
       }
     tel <- tel + 1
@@ -793,6 +844,10 @@ for (k in 1:nreps){
   }
 }
 )
+
+write.csv(x = MSE, file = "ECLSKscience_MSE.txt")
+write.csv(x = tree_size, file = "ECLSKscience_TreeSize.txt")
+
 ```
 
 ## ECLSK School (N = 999) DOES NOT CONVERGE
@@ -852,7 +907,7 @@ for (k in 1:nreps){
     ###### Fit a regualar GLMM tree ######
     glmtree <- lmertree(child_readscore ~ 1| (1|school_ID) |  school_pct.male +
                             school_SES  + school_race + school_cert + school_read,
-                          data = traindat)
+                          data = traindat, verbose = FALSE)
 
     pred_glmtree <- predict(glmtree, newdata = testdat, re.form = ~0)
 
@@ -864,7 +919,7 @@ for (k in 1:nreps){
                           school_race + school_cert + school_read,
                         data = traindat, group.by = traindat$school_ID,
                         test = testdat, group.by.test = testdat$school_ID,
-                        combineChains = TRUE, seed = 42)
+                        combineChains = TRUE, seed = 42, verbose = FALSE)
 
     posterior <- Mbart$yhat.train
 
@@ -879,23 +934,23 @@ for (k in 1:nreps){
         ###### Baygen Weighted ######
         babart <- lmertree(y_gen ~ 1| (1|school_ID) |  school_pct.male +
                             school_SES  + school_race + school_cert + school_read,
-                             data = surr_mlbart,
+                             data = surr_mlbart, verbose = FALSE, cluster = school_ID,
                              weights = rep(1/ngen, times = nrow(surr_mlbart)))
         
         pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
         MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$child_readscore - pred_babart)^2)
         tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
 
-        ###### Baygen NOT Weighted ######
-        if(ngen != 1){
-          babart <- lmertree(y_gen ~ 1| (1|school_ID) |  school_pct.male +
-                            school_SES  + school_race + school_cert + school_read,
-                             data = surr_mlbart, maxdepth = 5)
-
-          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$child_readscore - pred_babart)^2)# :s
-          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
-        }
+        # ###### Baygen NOT Weighted ######
+        # if(ngen != 1){
+        #   babart <- lmertree(y_gen ~ 1| (1|school_ID) |  school_pct.male +
+        #                     school_SES  + school_race + school_cert + school_read,
+        #                      data = surr_mlbart, maxdepth = 5)
+        # 
+        #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        #   MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$child_readscore - pred_babart)^2)# :s
+        #   tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        # }
 
         # smearing HIER MOET DE CLUSTERSTRUCTUUR NOG WORDEN BEHOUDEN
         for(palt in palts){
@@ -904,7 +959,7 @@ for (k in 1:nreps){
           Mbart <- rbart_vi(child_readscore ~ school_pct.male + school_SES +
                           school_race + school_cert + school_read,
                         data = surr_mlbart, group.by = surr_mlbart$school_ID,
-                        combineChains = TRUE,
+                        combineChains = TRUE, verbose = FALSE,
                         seed = 42)
           
           y_gen <- Mbart$yhat.train.mean
@@ -913,23 +968,23 @@ for (k in 1:nreps){
           ###### Smearing Weighted ######
           babart <- lmertree(y_gen ~ 1| (1|school_ID) |  school_pct.male +
                                school_SES  + school_race + school_cert + school_read,
-                            data = surr_mlbart,
-                            weights = rep(1/ngen, times = nrow(surr_mlbart)), maxdepth = 5)
+                            data = surr_mlbart, verbose = FALSE, cluster = school_ID,
+                            weights = rep(1/ngen, times = nrow(surr_mlbart)))
           
           pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
           MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$child_readscore - pred_babart)^2)
           tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
 
-          ##### Smearing NOT Weighted ######
-          if(ngen != 1){
-            babart <- lmertree(y_gen ~ 1| (1|school_ID) |  school_pct.male +
-                            school_SES  + school_race + school_cert + school_read,
-                          data = surr_mlbart, maxdepth = 5)
-
-            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$child_readscore - pred_babart)^2)
-            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
-          }
+          # ##### Smearing NOT Weighted ######
+          # if(ngen != 1){
+          #   babart <- lmertree(y_gen ~ 1| (1|school_ID) |  school_pct.male +
+          #                   school_SES  + school_race + school_cert + school_read,
+          #                 data = surr_mlbart, maxdepth = 5)
+          # 
+          #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          #   MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$child_readscore - pred_babart)^2)
+          #   tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          # }
         }
       }
     tel <- tel + 1
@@ -937,6 +992,9 @@ for (k in 1:nreps){
   }
 }
 )
+
+write.csv(x = MSE, file = "ECLSKschool_MSE.txt")
+write.csv(x = tree_size, file = "ECLSKschool_TreeSize.txt")
 ```
 
 ## Marriage (N=1000) Binominal ieks
@@ -1007,15 +1065,15 @@ for (k in 1:nreps){
                         test = testdat, group.by.test = testdat$state,
                       combineChains = TRUE, seed = 42)
 
-    posterior <- Mbart$yhat.train
+    posterior <- binomial()$linkinv((Mbart$yhat.train))
 
-    MSE[(k-1)*10+i,2] <- mean((testdat$marriage_01 - Mbart$yhat.test.mean)^2)
+    MSE[(k-1)*10+i,2] <- mean((testdat$marriage_01 - binomial()$linkinv(colMeans(Mbart$yhat.test)))^2)
 
     # fit BaBart GLMM trees with different sizes of Ngen using Baygen and smearing
       for(ngen in ngensizes){
         
         # Bayesian data generation
-        surr_mlbart <- gendata_bay(traindat, posterior, ngen * nrow(traindat))
+        surr_mlbart <- gendata_bay(as_tibble(traindat), posterior, ngen * nrow(traindat))
 
         ###### Baygen Weighted ######
         babart <- lmertree(y_gen ~1 | (1|state) | female + age_cat + edu_cat + 
@@ -1026,16 +1084,16 @@ for (k in 1:nreps){
         MSE[(k-1)*10+i,3+match(ngen,ngensizes)] <- mean((testdat$marriage_01 - pred_babart)^2)
         tree_size[(k-1)*10+i,3+match(ngen,ngensizes)] <- (length(babart$tree)-1)/2
 
-        ###### Baygen NOT Weighted ######
-        if(ngen != 1){
-          babart <- lmertree(y_gen ~1 | (1|state) | female + age_cat + edu_cat + 
-                          p_evang + kerry_04, data = surr_mlbart,
-                      weights = rep(1/ngen, times = nrow(surr_mlbart)))
-
-          pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-          MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$marriage_01 - pred_babart)^2)# :s
-          tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
-        }
+        # ###### Baygen NOT Weighted ######
+        # if(ngen != 1){
+        #   babart <- lmertree(y_gen ~1 | (1|state) | female + age_cat + edu_cat + 
+        #                   p_evang + kerry_04, data = surr_mlbart,
+        #               weights = rep(1/ngen, times = nrow(surr_mlbart)))
+        # 
+        #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+        #   MSE[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- mean((testdat$marriage_01 - pred_babart)^2)# :s
+        #   tree_size[(k-1)*10+i,2+match(ngen,ngensizes)+length(ngensizes)+nrow(BaSmear_design)] <- (length(babart$tree)-1)/2
+        # }
 
         # smearing HIER MOET DE CLUSTERSTRUCTUUR WORDEN BEHOUDEN
         for(palt in palts){
@@ -1046,7 +1104,7 @@ for (k in 1:nreps){
                       group.by.test = surr_mlbart$state, verbose = FALSE,
                       combineChains = TRUE, seed = 42)
           
-          y_gen <- Mbart$yhat.train.mean
+          y_gen <- binomial()$linkinv(colMeans(Mbart$yhat.test))
           
           surr_mlbart <- cbind(surr_mlbart, y_gen)
 
@@ -1058,15 +1116,15 @@ for (k in 1:nreps){
           MSE[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- mean((testdat$marriage_01 - pred_babart)^2)
           tree_size[(k-1)*10+i,3+length(ngensizes)+match(ngen,ngensizes)+(match(palt, palts)-1)*length(ngensizes)] <- (length(babart$tree)-1)/2
 
-          ##### Smearing NOT Weighted ######
-          if(ngen != 1){
-            babart <- lmertree(y_gen ~ 1 | (1|state) | female + age_cat + edu_cat + p_evang + kerry_04, 
-                        data = surr_mlbart)
-            
-            pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
-            MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$marriage_01 - pred_babart)^2)
-            tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
-          }
+          # ##### Smearing NOT Weighted ######
+          # if(ngen != 1){
+          #   babart <- lmertree(y_gen ~ 1 | (1|state) | female + age_cat + edu_cat + p_evang + kerry_04, 
+          #               data = surr_mlbart)
+          #   
+          #   pred_babart <- predict(babart, newdata = testdat, re.form = ~0)
+          #   MSE      [(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- mean((testdat$marriage_01 - pred_babart)^2)
+          #   tree_size[(k-1)*10+i,2+length(ngensizes)*2+nrow(BaSmear_design)+(match(palt, palts)-1)*(length(ngensizes)-1)+match(ngen, ngensizes)-1] <- (length(babart$tree)-1)/2
+          # }
         }
       }
     tel <- tel + 1
@@ -1074,15 +1132,207 @@ for (k in 1:nreps){
   }
 }
 )
+
+write.csv(x = MSE, file = "marriage_MSE.txt")
+write.csv(x = tree_size, file = "marriage_TreeSize.txt")
 ```
 
+# Make plots
+
+```{r}
+rm(list = ls())
+
+# lees data in
+Safety_MSE <- Filter(function(x)!all(is.na(x)), read.table(file = "Safety_MSE.txt", header = TRUE, sep = ",", row.names = 1))
+Safety_TreeSize <- Filter(function(x)!all(is.na(x)), read.table(file = "Safety_TreeSize.txt", header = TRUE, sep = ",", row.names = 1))
+
+ACT_MSE <- Filter(function(x)!all(is.na(x)), read.table(file = "ACT_MSE.txt", header = TRUE, sep = ",", row.names = 1))
+ACT_TreeSize <- Filter(function(x)!all(is.na(x)), read.table(file = "ACT_TreeSize.txt", header = TRUE, sep = ",", row.names = 1))
+
+ECLSKmath_MSE <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKmath_MSE.txt", header = TRUE, sep = ",", row.names = 1))
+ECLSKmath_TreeSize <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKmath_TreeSize.txt", header = TRUE, sep = ",", row.names = 1))
+
+ECLSKreading_MSE <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKreading_MSE.txt", header = TRUE, sep = ",", row.names = 1))
+ECLSKreading_TreeSize <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKreading_TreeSize.txt", header = TRUE, sep = ",", row.names = 1))
+
+ECLSKscience_MSE <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKscience_MSE.txt", header = TRUE, sep = ",", row.names = 1))[,1:14]
+ECLSKscience_TreeSize <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKscience_TreeSize.txt", header = TRUE, sep = ",", row.names = 1))[,1:13]
+
+ECLSKschool_MSE <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKschool_MSE.txt", header = TRUE, sep = ",", row.names = 1))
+ECLSKschool_TreeSize <- Filter(function(x)!all(is.na(x)), read.table(file = "ECLSKschool_TreeSize.txt", header = TRUE, sep = ",", row.names = 1))
+
+marriage_MSE <- Filter(function(x)!all(is.na(x)), read.table(file = "marriage_MSE.txt", header = TRUE, sep = ",", row.names = 1))
+marriage_TreeSize <- Filter(function(x)!all(is.na(x)), read.table(file = "marriage_TreeSize.txt", header = TRUE, sep = ",", row.names = 1))
 
 
+# combine all MSE datasets
+MSEsets <- mget(grep(x = ls(), pattern = "MSE", value = TRUE))
+allMSE <- do.call("rbind", MSEsets)
 
+# combine all MSE datasets
+TreeSizesets <- mget(grep(x = ls(), pattern = "TreeSize", value = TRUE)) 
+allTreeSize <- do.call("rbind", TreeSizesets)
 
+# plot relative MSE's
+relMSE <- apply(X = allMSE, MARGIN = 1, FUN = function(x){x/min(x)})
+relMSElong <- melt(relMSE)
+colnames(relMSElong) <- c("Model", "Dataset", "MSE")
+relMSElong$Dataset <- gsub("_MSE\\.[0-9]+", "", relMSElong$Dataset)
+relMSElong$Dataset <- as.factor(relMSElong$Dataset)
 
+ggplot(relMSElong, aes(x=Dataset, y=MSE, fill=Model)) + 
+  geom_boxplot() +
+  facet_wrap(~Dataset, scales = "free", nrow = 1) +
+  theme(axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Relative MSE for every Dataset")
 
+ggplot(relMSElong, aes(x=MSE, y=Model, fill=Model)) + 
+  geom_boxplot() +
+  labs(x = "MSE / min(MSE)") +
+  theme(legend.position = "none",
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Figure 4: Relative MSE combined")
 
+# plot absolute MSE's
+allMSElong <- melt(as.matrix(allMSE))
+allMSElong$Var3 <- allMSElong$Var1
+allMSElong$Var1 <- allMSElong$Var2
+allMSElong$Var2 <- allMSElong$Var3
+allMSElong$Var3 <- allMSElong$niks
+colnames(allMSElong) <- c("Model", "Dataset", "MSE")
+allMSElong$Dataset <- gsub("_MSE\\.[0-9]+", "", allMSElong$Dataset)
+allMSElong$Dataset <- as.factor(allMSElong$Dataset)
 
+ggplot(allMSElong, aes(x=Model, y=MSE, fill=Model)) + 
+    geom_boxplot() +
+    facet_wrap(~Dataset, scales = "free", nrow = 1) +
+  theme(axis.text.x=element_blank(),
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Figure 3: Absolute MSE for every dataset")
 
+# plot absolte TreeSize
+allTreeSizelong <- melt(as.matrix(allTreeSize))
+allTreeSizelong$Var3 <- allTreeSizelong$Var1
+allTreeSizelong$Var1 <- allTreeSizelong$Var2
+allTreeSizelong$Var2 <- allTreeSizelong$Var3
+allTreeSizelong$Var3 <- allTreeSizelong$niks
+colnames(allTreeSizelong) <- c("Model", "Dataset", "Tree Size")
+allTreeSizelong$Dataset <- gsub("_TreeSize\\.[0-9]+", "", allTreeSizelong$Dataset)
+allTreeSizelong$Dataset <- as.factor(allTreeSizelong$Dataset)
+
+ggplot(allTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
+  geom_boxplot() +
+  theme(legend.position = "none",
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Figure 2: Tree Size combined")
+
+ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
+    geom_boxplot() +
+    facet_wrap(~Dataset, scales = "free", nrow = 1) +
+  theme(axis.text.x=element_blank(),
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Figure 1: Tree Size for every dataset")
+
+# plot relative TreeSize
+relTreeSize <- apply(X = allTreeSize, MARGIN = 1, FUN = function(x){x/min(x)})
+relTreeSizelong <- melt(relTreeSize)
+colnames(relTreeSizelong) <- c("Model", "Dataset", "Tree Size")
+relTreeSizelong$Dataset <- gsub("_TreeSize\\.[0-9]+", "", relTreeSizelong$Dataset)
+relTreeSizelong$Dataset <- as.factor(relTreeSizelong$Dataset)
+
+ggplot(relTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
+  geom_boxplot() +
+  theme(legend.position = "none",
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Relative Tree Size combined")
+
+ggplot(relTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
+    geom_boxplot() +
+    facet_wrap(~Dataset, scales = "free", nrow = 1) +
+  theme(axis.text.x=element_blank(),
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Figure 1: Relative Tree Size for every dataset")
+```
+
+# Make Tables
+
+```{r}
+# Mean and SD Tree Sizes
+table1 <- allTreeSizelong %>% 
+  group_by(Model, Dataset) %>% 
+  summarise(M = mean(`Tree Size`), SD = round(sd(`Tree Size`), digits = 2)) %>% 
+  ungroup() %>% 
+  pivot_wider(
+    names_from = Dataset,
+    names_glue = "{Dataset}.{.value}",
+    values_from = c(M, SD)
+  ) %>% 
+  dplyr::select(Model, order(names(.))) %>% 
+  nice_table(., separate.header = TRUE, italics = seq(.),
+             title = c("Mean tree size and standard deviation","Table 1"))
+
+# Mean and SD Tree Sizes
+table3 <- allMSElong %>% 
+  group_by(Model, Dataset) %>% 
+  summarise(M = mean(MSE), SD = round(sd(MSE), digits = 2)) %>% 
+  ungroup() %>% 
+  pivot_wider(
+    names_from = Dataset,
+    names_glue = "{Dataset}.{.value}",
+    values_from = c(M, SD)
+  ) %>% 
+  dplyr::select(Model, order(names(.))) %>% 
+  nice_table(., separate.header = TRUE, italics = seq(.),
+             title = c("Mean MSE and standard deviation","Table 3"))
+
+# Combined Tree Size and Relative MSE
+table2 <- right_join(
+  allTreeSizelong %>% 
+  group_by(Model) %>% 
+  summarise(`Tree Size.M` = round(mean(`Tree Size`), digits = 2), `Tree Size.SD` = round(sd(`Tree Size`), digits = 2)) %>% 
+  ungroup(), 
+  relMSElong %>% 
+  group_by(Model) %>% 
+  summarise(`Relative MSE.M` = round(mean(`MSE`), digits = 2), `Relative MSE.SD` = round(sd(`MSE`), digits = 2)) %>% 
+  ungroup(), 
+  by = "Model") %>%
+  nice_table(., separate.header = TRUE, italics = seq(.),
+             title = c("Combined Tree Size and Relative MSE","Table 2"))
+
+save_as_docx(table1, path = "Table 1.docx")
+save_as_docx(table2, path = "Table 2.docx")
+save_as_docx(table3, path = "Table 3.docx")
+
+table1
+table2
+table3
+```
 
