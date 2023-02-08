@@ -1242,14 +1242,31 @@ ggplot(allTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) +
         plot.title=element_text(size=18,face="bold")) +
   ggtitle("Figure 2: Tree Size combined")
 
+#######################
 ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
     geom_boxplot() +
-    facet_wrap(~Dataset, scales = "free", nrow = 1) +
+    facet_wrap(~Dataset, scales = "free", nrow = 2) +
   theme(axis.text.x=element_blank(),
         axis.title=element_text(size=14,face="bold"),
         axis.text=element_text(size=12),
         legend.text=element_text(size=12),
         legend.title=element_text(size=14,face="bold"),
+        legend.position = c(0.82,0.25),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle("Figure 1: Tree Size for every dataset")
+
+levels(allTreeSizelong$Model) <- c("GLMM tree", "PPD: N=1", "PPD: N=5", "PPD: N=10", "smearing: N=1, palt=0.00", "smearing: N=5, palt=0.00", "smearing: N=10, palt=0.00", "smearing: N=1, palt=0.25", "smearing: N=5, palt=0.25", "smearing: N=10, palt=0.25", "smearing: N=1, palt=0.50", "smearing: N=5, palt=0.50", "smearing: N=10, palt=0.50")
+
+#######################
+ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
+    geom_boxplot() +
+    facet_wrap(~Dataset, scales = "free", nrow = 2) +
+  theme(axis.text.x=element_blank(),
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        legend.position = c(0.82,0.25),
         plot.title=element_text(size=18,face="bold")) +
   ggtitle("Figure 1: Tree Size for every dataset")
 
@@ -1280,6 +1297,136 @@ ggplot(relTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) +
         legend.title=element_text(size=14,face="bold"),
         plot.title=element_text(size=18,face="bold")) +
   ggtitle("Figure 1: Relative Tree Size for every dataset")
+
+############ calculate variance for every dataset ############
+
+### safety ###
+set.seed(42)
+data = read_sav(file.path(here(),"Project David","Safety.sav"))
+var_safety <- var(data$unsafe)
+
+### ACT ###
+set.seed(42)
+data(ACTG175)
+## Remove missings
+ACTG175 <- ACTG175[!is.na(ACTG175$cd4), ]
+sapply(data, class)
+
+## Correct coding of factors
+ACTG175$pidnum <- factor(ACTG175$pidnum) 
+ACTG175$hemo <- factor(ACTG175$hemo) 
+ACTG175$homo <- factor(ACTG175$homo)
+ACTG175$drugs <- factor(ACTG175$drugs)
+ACTG175$oprior <- factor(ACTG175$oprior)
+ACTG175$z30 <- factor(ACTG175$z30)
+ACTG175$zprior <- factor(ACTG175$zprior)
+ACTG175$race <- factor(ACTG175$race)
+ACTG175$str2 <- factor(ACTG175$str2)
+ACTG175$symptom <- factor(ACTG175$symptom)
+ACTG175$treat <- factor(ACTG175$treat)
+ACTG175$offtrt <- factor(ACTG175$offtrt)
+
+data <- ACTG175[ACTG175$pidnum %in% sample(x = unique(ACTG175$pidnum), size = 377),]
+rm(ACTG175)
+var_ACT <- var(data$cd4)
+
+### math ###
+set.seed(42)
+load(file.path(here(),"Project David","ECLSK","Math ability data.Rdata"))
+data <- mathdata[mathdata$CHILDID %in% sample(x = unique(mathdata$CHILDID), size = 200),]
+sapply(X = data, FUN = class)
+table(data$RACE)
+data$CHILDID <- factor(data$CHILDID)
+rm(mathdata)
+
+var_math <- var(data$score)
+
+### reading ###
+set.seed(42)
+load(file.path(here(),"Project David","ECLSK","Reading ability data.Rdata"))
+data <- readdata[readdata$CHILDID %in% sample(x = unique(readdata$CHILDID), size = 200),]
+data$asmtmm <- factor(data$asmtmm)
+data$CHILDID <- factor(data$CHILDID)
+rm(readdata)
+
+var_reading <- var(data$score)
+
+### science ###
+set.seed(42)
+load(file.path(here(),"Project David","ECLSK","Science ability data.Rdata"))
+data <- sciedata[sciedata$CHILDID %in% sample(x = unique(sciedata$CHILDID), size = 333),]
+data$asmtmm <- as.factor(data$asmtmm)
+rm(sciedata)
+
+var_science <- var(data$score)
+
+### school ###
+set.seed(42)
+load(file = "ECLSK_school.Rda")
+Data <- Data %>%
+  group_by(school_ID) %>%
+  mutate(school_read = mean(as.numeric(child_read))) %>% 
+  ungroup()
+#Data <- Data[Data$school_ID %in% sort(unique(Data$school_ID))[table(Data$school_ID) >= 10],]
+data <- Data[Data$school_ID %in% sample(x = unique(Data$school_ID), size = 146),]
+data$school_ID <- factor(data$school_ID)
+rm(Data)
+data <- as.data.frame(data)
+
+var_school <- var(data$child_readscore)
+
+### marriage ###
+set.seed(42)
+load("practical6_surveydata.Rda")
+
+data <- g
+data <- na.omit(data)
+data$marriage_01 <- as.numeric(data$marriage)
+data$marriage <- factor(data$marriage)
+data <- data[sample(x = 1:nrow(data), size = 1000 , replace = F),]
+rm(g)
+
+var_marriage <- var(data$marriage_01)
+
+rm(data)
+
+# add to long dataset
+allMSElong$Variance <- NA
+allMSElong$Variance[(allMSElong$Dataset == "ACT")] <- var_ACT
+allMSElong$Variance[(allMSElong$Dataset == "ECLSKmath")] <- var_math
+allMSElong$Variance[(allMSElong$Dataset == "ECLSKreading")] <- var_reading
+allMSElong$Variance[(allMSElong$Dataset == "ECLSKschool")] <- var_school
+allMSElong$Variance[(allMSElong$Dataset == "ECLSKscience")] <- var_science
+allMSElong$Variance[(allMSElong$Dataset == "marriage")] <- var_marriage
+allMSElong$Variance[(allMSElong$Dataset == "Safety")] <- var_safety
+
+allMSElong$Rsquared <- 1 - allMSElong$MSE / allMSElong$Variance
+
+levels(allMSElong$Model) <- c("GLMM tree","BART", "PPD: N=1", "PPD: N=5", "PPD: N=10", "smearing: N=1, palt=0.00", "smearing: N=5, palt=0.00", "smearing: N=10, palt=0.00", "smearing: N=1, palt=0.25", "smearing: N=5, palt=0.25", "smearing: N=10, palt=0.25", "smearing: N=1, palt=0.50", "smearing: N=5, palt=0.50", "smearing: N=10, palt=0.50")
+
+# plot combined Rsquared
+ggplot(allMSElong, aes(x=Rsquared, y=Model, fill=Model)) + 
+  geom_boxplot() +
+  labs(x = "MSE / variance(y) a.k.a. Rsquared") +
+  theme(legend.position = "none",
+        axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        plot.title=element_text(size=18,face="bold")) +
+  ggtitle(expression(R^2~" combined"))
+
+ggplot(allMSElong, aes(x=Dataset, y=Rsquared, fill=Model)) + 
+  geom_boxplot() +
+  facet_wrap(~Dataset, scales = "free_x", nrow = 2) +
+  theme(axis.title=element_text(size=14,face="bold"),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title=element_text(size=14,face="bold"),
+        legend.position = c(0.82,0.25),
+        plot.title=element_text(size=18,face="bold")) +
+  ylab(expression(R^2)) +
+  ggtitle(expression(R^2~" for every dataset"))
 ```
 
 # Make Tables
@@ -1302,7 +1449,7 @@ table1 <- allTreeSizelong %>%
 # Mean and SD Tree Sizes
 table3 <- allMSElong %>% 
   group_by(Model, Dataset) %>% 
-  summarise(M = mean(MSE), SD = round(sd(MSE), digits = 2)) %>% 
+  summarise(M = mean(Rsquared), SD = round(sd(Rsquared), digits = 2)) %>% 
   ungroup() %>% 
   pivot_wider(
     names_from = Dataset,
@@ -1311,7 +1458,7 @@ table3 <- allMSElong %>%
   ) %>% 
   dplyr::select(Model, order(names(.))) %>% 
   nice_table(., separate.header = TRUE, italics = seq(.),
-             title = c("Mean MSE and standard deviation","Table 3"))
+             title = c("Rsquared and standard deviation","Table 3"))
 
 # Combined Tree Size and Relative MSE
 table2 <- right_join(
@@ -1327,6 +1474,14 @@ table2 <- right_join(
   nice_table(., separate.header = TRUE, italics = seq(.),
              title = c("Combined Tree Size and Relative MSE","Table 2"))
 
+# Combined Tree Size and Relative MSE
+table2 <- allMSElong %>% 
+  group_by(Model) %>% 
+  summarise(`Rsquared.M` = round(mean(`Rsquared`), digits = 2), `Rsquared.SD` = round(sd(`Rsquared`), digits = 2)) %>% 
+  ungroup() %>% 
+  nice_table(., separate.header = TRUE, italics = seq(.),
+             title = c("Combined Rsquared","Table 2"))
+
 save_as_docx(table1, path = "Table 1.docx")
 save_as_docx(table2, path = "Table 2.docx")
 save_as_docx(table3, path = "Table 3.docx")
@@ -1334,5 +1489,7 @@ save_as_docx(table3, path = "Table 3.docx")
 table1
 table2
 table3
+
+summary(allMSElong)
 ```
 
