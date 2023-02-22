@@ -21,6 +21,13 @@ library("LongCART")
 library("reshape2")
 library("rempsyc")
 library("readr")
+library("stats")
+library("ggsignif")
+library("sjlabelled")
+library("rstatix")
+library("jtools")
+library("Hmisc")
+library("ggstatsplot")
 ```
 
 ## Data generation functions
@@ -1173,33 +1180,33 @@ allMSE <- do.call("rbind", MSEsets)
 TreeSizesets <- mget(grep(x = ls(), pattern = "TreeSize", value = TRUE)) 
 allTreeSize <- do.call("rbind", TreeSizesets)
 
-# plot relative MSE's
-relMSE <- apply(X = allMSE, MARGIN = 1, FUN = function(x){x/min(x)})
-relMSElong <- melt(relMSE)
-colnames(relMSElong) <- c("Model", "Dataset", "MSE")
-relMSElong$Dataset <- gsub("_MSE\\.[0-9]+", "", relMSElong$Dataset)
-relMSElong$Dataset <- as.factor(relMSElong$Dataset)
-
-ggplot(relMSElong, aes(x=Dataset, y=MSE, fill=Model)) + 
-  geom_boxplot() +
-  facet_wrap(~Dataset, scales = "free", nrow = 1) +
-  theme(axis.title=element_text(size=14,face="bold"),
-        axis.text=element_text(size=12),
-        legend.text=element_text(size=12),
-        legend.title=element_text(size=14,face="bold"),
-        plot.title=element_text(size=18,face="bold")) +
-  ggtitle("Relative MSE for every Dataset")
-
-ggplot(relMSElong, aes(x=MSE, y=Model, fill=Model)) + 
-  geom_boxplot() +
-  labs(x = "MSE / min(MSE)") +
-  theme(legend.position = "none",
-        axis.title=element_text(size=14,face="bold"),
-        axis.text=element_text(size=12),
-        legend.text=element_text(size=12),
-        legend.title=element_text(size=14,face="bold"),
-        plot.title=element_text(size=18,face="bold")) +
-  ggtitle("Figure 4: Relative MSE combined")
+# # plot relative MSE's
+# relMSE <- apply(X = allMSE, MARGIN = 1, FUN = function(x){x/min(x)})
+# relMSElong <- melt(relMSE)
+# colnames(relMSElong) <- c("Model", "Dataset", "MSE")
+# relMSElong$Dataset <- gsub("_MSE\\.[0-9]+", "", relMSElong$Dataset)
+# relMSElong$Dataset <- as.factor(relMSElong$Dataset)
+# 
+# ggplot(relMSElong, aes(x=Dataset, y=MSE, fill=Model)) + 
+#   geom_boxplot() +
+#   facet_wrap(~Dataset, scales = "free", nrow = 1) +
+#   theme(axis.title=element_text(size=14,face="bold"),
+#         axis.text=element_text(size=12),
+#         legend.text=element_text(size=12),
+#         legend.title=element_text(size=14,face="bold"),
+#         plot.title=element_text(size=18,face="bold")) +
+#   ggtitle("Relative MSE for every Dataset")
+# 
+# ggplot(relMSElong, aes(x=MSE, y=Model, fill=Model)) + 
+#   geom_boxplot() +
+#   labs(x = "MSE / min(MSE)") +
+#   theme(legend.position = "none",
+#         axis.title=element_text(size=14,face="bold"),
+#         axis.text=element_text(size=12),
+#         legend.text=element_text(size=12),
+#         legend.title=element_text(size=14,face="bold"),
+#         plot.title=element_text(size=18,face="bold")) +
+#   ggtitle("Figure 4: Relative MSE combined")
 
 # plot absolute MSE's
 allMSElong <- melt(as.matrix(allMSE))
@@ -1211,16 +1218,16 @@ colnames(allMSElong) <- c("Model", "Dataset", "MSE")
 allMSElong$Dataset <- gsub("_MSE\\.[0-9]+", "", allMSElong$Dataset)
 allMSElong$Dataset <- as.factor(allMSElong$Dataset)
 
-ggplot(allMSElong, aes(x=Model, y=MSE, fill=Model)) + 
-    geom_boxplot() +
-    facet_wrap(~Dataset, scales = "free", nrow = 1) +
-  theme(axis.text.x=element_blank(),
-        axis.title=element_text(size=14,face="bold"),
-        axis.text=element_text(size=12),
-        legend.text=element_text(size=12),
-        legend.title=element_text(size=14,face="bold"),
-        plot.title=element_text(size=18,face="bold")) +
-  ggtitle("Figure 3: Absolute MSE for every dataset")
+# ggplot(allMSElong, aes(x=Model, y=MSE, fill=Model)) + 
+#     geom_boxplot() +
+#     facet_wrap(~Dataset, scales = "free", nrow = 1) +
+#   theme(axis.text.x=element_blank(),
+#         axis.title=element_text(size=14,face="bold"),
+#         axis.text=element_text(size=12),
+#         legend.text=element_text(size=12),
+#         legend.title=element_text(size=14,face="bold"),
+#         plot.title=element_text(size=18,face="bold")) +
+#   ggtitle("Figure 3: Absolute MSE for every dataset")
 
 # plot absolte TreeSize
 allTreeSizelong <- melt(as.matrix(allTreeSize))
@@ -1232,17 +1239,16 @@ colnames(allTreeSizelong) <- c("Model", "Dataset", "Tree Size")
 allTreeSizelong$Dataset <- gsub("_TreeSize\\.[0-9]+", "", allTreeSizelong$Dataset)
 allTreeSizelong$Dataset <- as.factor(allTreeSizelong$Dataset)
 
-ggplot(allTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
-  geom_boxplot() +
-  theme(legend.position = "none",
-        axis.title=element_text(size=14,face="bold"),
-        axis.text=element_text(size=12),
-        legend.text=element_text(size=12),
-        legend.title=element_text(size=14,face="bold"),
-        plot.title=element_text(size=18,face="bold")) +
-  ggtitle("Figure 2: Tree Size combined")
+# ggplot(allTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
+#   geom_boxplot() +
+#   theme(legend.position = "none",
+#         axis.title=element_text(size=14,face="bold"),
+#         axis.text=element_text(size=12),
+#         legend.text=element_text(size=12),
+#         legend.title=element_text(size=14,face="bold"),
+#         plot.title=element_text(size=18,face="bold")) +
+#   ggtitle("Figure 2: Tree Size combined")
 
-#######################
 ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
     geom_boxplot() +
     facet_wrap(~Dataset, scales = "free", nrow = 2) +
@@ -1257,46 +1263,33 @@ ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) +
 
 levels(allTreeSizelong$Model) <- c("GLMM tree", "PPD: N=1", "PPD: N=5", "PPD: N=10", "smearing: N=1, palt=0.00", "smearing: N=5, palt=0.00", "smearing: N=10, palt=0.00", "smearing: N=1, palt=0.25", "smearing: N=5, palt=0.25", "smearing: N=10, palt=0.25", "smearing: N=1, palt=0.50", "smearing: N=5, palt=0.50", "smearing: N=10, palt=0.50")
 
-#######################
-ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
-    geom_boxplot() +
-    facet_wrap(~Dataset, scales = "free", nrow = 2) +
-  theme(axis.text.x=element_blank(),
-        axis.title=element_text(size=14,face="bold"),
-        axis.text=element_text(size=12),
-        legend.text=element_text(size=12),
-        legend.title=element_text(size=14,face="bold"),
-        legend.position = c(0.82,0.25),
-        plot.title=element_text(size=18,face="bold")) +
-  ggtitle("Figure 1: Tree Size for every dataset")
-
-# plot relative TreeSize
-relTreeSize <- apply(X = allTreeSize, MARGIN = 1, FUN = function(x){x/min(x)})
-relTreeSizelong <- melt(relTreeSize)
-colnames(relTreeSizelong) <- c("Model", "Dataset", "Tree Size")
-relTreeSizelong$Dataset <- gsub("_TreeSize\\.[0-9]+", "", relTreeSizelong$Dataset)
-relTreeSizelong$Dataset <- as.factor(relTreeSizelong$Dataset)
-
-ggplot(relTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
-  geom_boxplot() +
-  theme(legend.position = "none",
-        axis.title=element_text(size=14,face="bold"),
-        axis.text=element_text(size=12),
-        legend.text=element_text(size=12),
-        legend.title=element_text(size=14,face="bold"),
-        plot.title=element_text(size=18,face="bold")) +
-  ggtitle("Relative Tree Size combined")
-
-ggplot(relTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
-    geom_boxplot() +
-    facet_wrap(~Dataset, scales = "free", nrow = 1) +
-  theme(axis.text.x=element_blank(),
-        axis.title=element_text(size=14,face="bold"),
-        axis.text=element_text(size=12),
-        legend.text=element_text(size=12),
-        legend.title=element_text(size=14,face="bold"),
-        plot.title=element_text(size=18,face="bold")) +
-  ggtitle("Figure 1: Relative Tree Size for every dataset")
+# # plot relative TreeSize
+# relTreeSize <- apply(X = allTreeSize, MARGIN = 1, FUN = function(x){x/min(x)})
+# relTreeSizelong <- melt(relTreeSize)
+# colnames(relTreeSizelong) <- c("Model", "Dataset", "Tree Size")
+# relTreeSizelong$Dataset <- gsub("_TreeSize\\.[0-9]+", "", relTreeSizelong$Dataset)
+# relTreeSizelong$Dataset <- as.factor(relTreeSizelong$Dataset)
+# 
+# ggplot(relTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
+#   geom_boxplot() +
+#   theme(legend.position = "none",
+#         axis.title=element_text(size=14,face="bold"),
+#         axis.text=element_text(size=12),
+#         legend.text=element_text(size=12),
+#         legend.title=element_text(size=14,face="bold"),
+#         plot.title=element_text(size=18,face="bold")) +
+#   ggtitle("Relative Tree Size combined")
+# 
+# ggplot(relTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
+#     geom_boxplot() +
+#     facet_wrap(~Dataset, scales = "free", nrow = 1) +
+#   theme(axis.text.x=element_blank(),
+#         axis.title=element_text(size=14,face="bold"),
+#         axis.text=element_text(size=12),
+#         legend.text=element_text(size=12),
+#         legend.title=element_text(size=14,face="bold"),
+#         plot.title=element_text(size=18,face="bold")) +
+#   ggtitle("Figure 1: Relative Tree Size for every dataset")
 
 ############ calculate variance for every dataset ############
 
@@ -1427,6 +1420,179 @@ ggplot(allMSElong, aes(x=Dataset, y=Rsquared, fill=Model)) +
         plot.title=element_text(size=18,face="bold")) +
   ylab(expression(R^2)) +
   ggtitle(expression(R^2~" for every dataset"))
+
+
+ggplot(allMSElong[allMSElong$Dataset == "marriage",], aes(x=Rsquared, y=Model)) + 
+  scale_y_discrete(limits = rev(levels(allMSElong$Model))) +
+  geom_violin() +
+  theme_apa() +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange") +
+  xlab(expression(R^2)) +
+  ggtitle(expression(R^2 ~ " for every model on Marriage dataset"))
+
+ggplot(allMSElong[allMSElong$Dataset == "ECLSKschool",], aes(x=Rsquared, y=Model)) + 
+  scale_y_discrete(limits = rev(levels(allMSElong$Model))) +
+  geom_violin() +
+  theme_apa() +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange") +
+  xlab(expression(R^2)) +
+  ggtitle(expression(R^2 ~ " for every model on ECLSKscience dataset"))
+```
+
+
+# Statistical analyses
+
+```{r}
+# data preperation T_T
+{
+  # finds the highest Rsq for every dataset, and calculates mean.
+  Rsquared_best_means <- allMSElong %>%
+    dplyr::group_by(Model, Dataset) %>% 
+    dplyr::mutate(Rsquared.Mean = mean(Rsquared), Rsquared.SD = sd(Rsquared)) %>% 
+    dplyr::ungroup() %>%
+    dplyr::select(Model, Dataset, Rsquared.Mean, Rsquared.SD) %>% 
+    dplyr::distinct() %>% 
+    dplyr::mutate(dummy_Model = substr(Model, 1,3)) %>% 
+    dplyr::group_by(Dataset, dummy_Model) %>% 
+    dplyr::top_n(1, Rsquared.Mean) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(Model, Dataset, Rsquared.Mean, Rsquared.SD) %>% 
+    dplyr::arrange(Dataset)
+  
+  # for every highest Rsq model, add every value of Rsq to the row
+  Rsquared_empty <- as.data.frame(matrix(NA, nrow = nrow(Rsquared_best_means), ncol = 100))
+  for(i in 1:nrow(Rsquared_best_means)){
+    tempRsquareds <- (allMSElong) %>%  
+      dplyr::select(Model, Dataset, Rsquared) %>% 
+      dplyr::filter(Model == as.character(sjlabelled::to_character(Rsquared_best_means[i,1])) & Dataset == as.character(to_character(Rsquared_best_means[i,2]))) %>% 
+      dplyr::select(Rsquared) %>% 
+      t() %>% 
+      as_vector()
+    Rsquared_empty[i,] <- tempRsquareds
+  }
+  Rsquared_best_total <- cbind(Rsquared_best_means, Rsquared_empty)
+}
+
+
+# statistical tests: ANOVA
+ANOVA_list <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  map(~ (.) %>% dplyr::select(-Dataset) %>%
+        stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long") %>% 
+        stats::aov(formula = Rsquared ~ Model) %>% 
+        summary
+      )
+
+# statistical tests: Tukey
+tukey_list <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  map(~ (.) %>% dplyr::select(-Dataset) %>%
+        stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long") %>% 
+        rstatix::tukey_hsd(formula = Rsquared ~ Model) %>% 
+        dplyr::mutate(contrast = paste0(.$group1,"---",.$group2),
+                      contrast = str_split(contrast, "---"))
+      )
+
+
+# boxplots with tukey tests (i just found out ggbetweenstats is better)
+plot_list <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  imap(~ (.x) %>% dplyr::select(-Dataset) %>%
+         stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long") %>%
+         ggplot(., aes(x = Model, y = Rsquared)) +
+           geom_boxplot() +
+           theme_apa() +
+           ggtitle(label = .y) +
+             geom_signif(
+             comparisons = tukey_list[[.y]]$contrast, # hier zou je kunnen aanvragen om alleen glmm met ppd en smearing te doen (of misschien in Tukey test)
+             y_position = seq(from = max(.x[,3:102])+0.02, to = (max(.x[,3:102]) + (max(.x[,3:102]) - min(.x[,3:102]))/2), length.out = 6),
+             annotations = tukey_list[[.y]]$p.adj.signif
+          )
+  )
+
+test <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  map(~ (.) %>% dplyr::select(-Dataset) %>%
+        stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long")
+      )
+
+
+# boxplots with tukey tests (i just found out ggbetweenstats is better)
+plot_list2 <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  imap(~ (.x) %>% dplyr::select(-Dataset) %>%
+         stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long") %>%
+         ggbetweenstats(
+          data = .,
+          x = Model,
+          y = Rsquared,
+          type = "parametric", # ANOVA or Kruskal-Wallis
+          var.equal = TRUE, # ANOVA or Welch ANOVA
+          plot.type = "box",
+          pairwise.comparisons = TRUE,
+          pairwise.display = "significant",
+          centrality.plotting = FALSE,
+          bf.message = FALSE,
+          ggtheme = theme_apa()
+        )
+  )
+
+
+TS1 <- allTreeSize %>% 
+  pivot_longer(cols = c("BaBart_N.1", "BaBart_N.5", "BaBart_N.10")) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("BaBart_N.1", "BaBart_N.5", "BaBart_N.10")) %>% 
+                  recode_factor(BaBart_N.1 = "N = 1", BaBart_N.5 = "N = 5", BaBart_N.10 = "N = 10"),
+                `Tree Size` = value,
+                Model = factor("PPD sampling")) %>% 
+  dplyr::select(`Generated Sample Size`, `Tree Size`, Model) 
+  
+TS2 <- allTreeSize %>% 
+  pivot_longer(cols = c("Smearing_N.1_palt.0", "Smearing_N.5_palt.0", "Smearing_N.10_palt.0")) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("Smearing_N.1_palt.0", "Smearing_N.5_palt.0", "Smearing_N.10_palt.0")) %>% 
+                  recode_factor(Smearing_N.1_palt.0 = "N = 1", Smearing_N.5_palt.0 = "N = 5", Smearing_N.10_palt.0 = "N = 10"),
+                `Tree Size` = value,
+                Model = factor("Smearing: palt = 0")) %>% 
+  dplyr::select(`Generated Sample Size`, `Tree Size`, Model) 
+
+TS3 <- allTreeSize %>% 
+  pivot_longer(cols = c("Smearing_N.1_palt.0.25", "Smearing_N.5_palt.0.25", "Smearing_N.10_palt.0.25")) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("Smearing_N.1_palt.0.25", "Smearing_N.5_palt.0.25", "Smearing_N.10_palt.0.25")) %>% 
+                  recode_factor(Smearing_N.1_palt.0.25 = "N = 1", Smearing_N.5_palt.0.25 = "N = 5", Smearing_N.10_palt.0.25 = "N = 10"),
+                `Tree Size` = value,
+                Model = factor("Smearing: palt = .25")) %>% 
+  dplyr::select(`Generated Sample Size`, `Tree Size`, Model) 
+
+TS4 <- allTreeSize %>% 
+  pivot_longer(cols = c("Smearing_N.1_palt.0.5", "Smearing_N.5_palt.0.5", "Smearing_N.10_palt.0.5")) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("Smearing_N.1_palt.0.5", "Smearing_N.5_palt.0.5", "Smearing_N.10_palt.0.5")) %>% 
+                  recode_factor(Smearing_N.1_palt.0.5 = "N = 1", Smearing_N.5_palt.0.5 = "N = 5", Smearing_N.10_palt.0.5 = "N = 10"),
+                `Tree Size` = value,
+                Model = factor("Smearing: palt = .50")) %>% 
+  dplyr::select(`Generated Sample Size`, `Tree Size`, Model) 
+
+
+treesizeplot_grouped <- (bind_rows(TS1, TS2, TS3, TS4)) %>% 
+  grouped_ggwithinstats(x=`Generated Sample Size`, y = `Tree Size`,
+                type = "np", pairwise.display = "significant",
+                grouping.var = Model)
+
+treesizeplot_combined <- (bind_rows(TS1, TS2, TS3, TS4)) %>% 
+  ggwithinstats(x=`Generated Sample Size`, y = `Tree Size`,
+                type = "np", pairwise.display = "significant")
+
+
+
+plot_list
+plot_list2
+
+treesizeplot_grouped
+treesizeplot_combined
+
 ```
 
 # Make Tables
@@ -1442,12 +1608,13 @@ table1 <- allTreeSizelong %>%
     names_glue = "{Dataset}.{.value}",
     values_from = c(M, SD)
   ) %>% 
-  dplyr::select(Model, order(names(.))) %>% 
-  nice_table(., separate.header = TRUE, italics = seq(.),
+  dplyr::select(Model, order(names(.))) 
+
+table1 %>% nice_table(., separate.header = TRUE, italics = seq(.),
              title = c("Mean tree size and standard deviation","Table 1"))
 
-# Mean and SD Tree Sizes
-table3 <- allMSElong %>% 
+# Mean and SD MSE
+table2 <- allMSElong %>% 
   group_by(Model, Dataset) %>% 
   summarise(M = mean(Rsquared), SD = round(sd(Rsquared), digits = 2)) %>% 
   ungroup() %>% 
@@ -1456,40 +1623,10 @@ table3 <- allMSElong %>%
     names_glue = "{Dataset}.{.value}",
     values_from = c(M, SD)
   ) %>% 
-  dplyr::select(Model, order(names(.))) %>% 
-  nice_table(., separate.header = TRUE, italics = seq(.),
-             title = c("Rsquared and standard deviation","Table 3"))
+  dplyr::select(Model, order(names(.)))
 
-# Combined Tree Size and Relative MSE
-table2 <- right_join(
-  allTreeSizelong %>% 
-  group_by(Model) %>% 
-  summarise(`Tree Size.M` = round(mean(`Tree Size`), digits = 2), `Tree Size.SD` = round(sd(`Tree Size`), digits = 2)) %>% 
-  ungroup(), 
-  relMSElong %>% 
-  group_by(Model) %>% 
-  summarise(`Relative MSE.M` = round(mean(`MSE`), digits = 2), `Relative MSE.SD` = round(sd(`MSE`), digits = 2)) %>% 
-  ungroup(), 
-  by = "Model") %>%
-  nice_table(., separate.header = TRUE, italics = seq(.),
-             title = c("Combined Tree Size and Relative MSE","Table 2"))
+table2 %>% nice_table(., separate.header = TRUE, italics = seq(.),
+             title = c("Rsquared and standard deviation","Table 2"))
 
-# Combined Tree Size and Relative MSE
-table2 <- allMSElong %>% 
-  group_by(Model) %>% 
-  summarise(`Rsquared.M` = round(mean(`Rsquared`), digits = 2), `Rsquared.SD` = round(sd(`Rsquared`), digits = 2)) %>% 
-  ungroup() %>% 
-  nice_table(., separate.header = TRUE, italics = seq(.),
-             title = c("Combined Rsquared","Table 2"))
 
-save_as_docx(table1, path = "Table 1.docx")
-save_as_docx(table2, path = "Table 2.docx")
-save_as_docx(table3, path = "Table 3.docx")
-
-table1
-table2
-table3
-
-summary(allMSElong)
 ```
-
