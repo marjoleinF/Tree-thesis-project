@@ -1542,7 +1542,7 @@ plot_list2 <- Rsquared_best_total %>%
         )
   )
 
-
+####################### cool tree size plots ---- N
 TS1 <- allTreeSize %>% 
   pivot_longer(cols = c("BaBart_N.1", "BaBart_N.5", "BaBart_N.10")) %>% 
   dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("BaBart_N.1", "BaBart_N.5", "BaBart_N.10")) %>% 
@@ -1586,13 +1586,164 @@ treesizeplot_combined <- (bind_rows(TS1, TS2, TS3, TS4)) %>%
                 type = "np", pairwise.display = "significant")
 
 
+########################## cool Rsq plots ----- N
+allRsquaredwide <- allMSElong %>% 
+  dplyr::mutate(fold = rep(1:100,98)) %>% 
+  dplyr::select(Model, Dataset, Rsquared, fold) %>% 
+  split(f = .$Dataset) %>% 
+  map(~ (.) %>% pivot_wider(names_from = Model, values_from = Rsquared)) %>%
+  bind_rows()
+colnames(allRsquaredwide)
 
-plot_list
-plot_list2
+RS1 <- allRsquaredwide %>% 
+  pivot_longer(cols = c(`PPD: N=1`, `PPD: N=5`, `PPD: N=10`)) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("PPD: N=1", "PPD: N=5", "PPD: N=10")) %>% 
+                  recode_factor("PPD: N=1" = "N = 1", "PPD: N=5" = "N = 5", "PPD: N=10" = "N = 10"),
+                Rsquared = value,
+                Model = factor("PPD sampling")) %>% 
+  dplyr::select(`Generated Sample Size`, Rsquared, Model) 
+  
+RS2 <- allRsquaredwide %>% 
+  pivot_longer(cols = c("smearing: N=1, palt=0.00", "smearing: N=5, palt=0.00", "smearing: N=10, palt=0.00")) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("smearing: N=1, palt=0.00", "smearing: N=5, palt=0.00", "smearing: N=10, palt=0.00")) %>% 
+                  recode_factor(`smearing: N=1, palt=0.00` = "N = 1", `smearing: N=5, palt=0.00` = "N = 5", `smearing: N=10, palt=0.00` = "N = 10"),
+                Rsquared = value,
+                Model = factor("Smearing: palt = 0")) %>% 
+  dplyr::select(`Generated Sample Size`, Rsquared, Model) 
 
-treesizeplot_grouped
-treesizeplot_combined
+RS3 <- allRsquaredwide %>% 
+  pivot_longer(cols = c("smearing: N=1, palt=0.25", "smearing: N=5, palt=0.25", "smearing: N=10, palt=0.25")) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("smearing: N=1, palt=0.25", "smearing: N=5, palt=0.25", "smearing: N=10, palt=0.25")) %>% 
+                  recode_factor(`smearing: N=1, palt=0.25` = "N = 1", `smearing: N=5, palt=0.25` = "N = 5", `smearing: N=10, palt=0.25` = "N = 10"),
+                Rsquared = value,
+                Model = factor("Smearing: palt = .25")) %>% 
+  dplyr::select(`Generated Sample Size`, Rsquared, Model) 
 
+RS4 <- allRsquaredwide %>% 
+  pivot_longer(cols = c("smearing: N=1, palt=0.50", "smearing: N=5, palt=0.50", "smearing: N=10, palt=0.50")) %>% 
+  dplyr::mutate(`Generated Sample Size` = factor(name, levels = c("smearing: N=1, palt=0.50", "smearing: N=5, palt=0.50", "smearing: N=10, palt=0.50")) %>% 
+                  recode_factor(`smearing: N=1, palt=0.50` = "N = 1", `smearing: N=5, palt=0.50` = "N = 5", `smearing: N=10, palt=0.50` = "N = 10"),
+                Rsquared = value,
+                Model = factor("Smearing: palt = .50")) %>% 
+  dplyr::select(`Generated Sample Size`, Rsquared, Model)
+
+
+Rsquaredplot_grouped <- (bind_rows(RS1, RS2, RS3, RS4)) %>% 
+  grouped_ggwithinstats(x=`Generated Sample Size`, y = Rsquared,
+                type = "np", pairwise.display = "significant",
+                grouping.var = Model)
+
+Rsquaredplot_combined <- (bind_rows(RS1, RS2, RS3, RS4)) %>% 
+  ggwithinstats(x=`Generated Sample Size`, y = Rsquared,
+                type = "np", pairwise.display = "significant",
+                pointpath = TRUE)
+
+
+########################## cool Tree Size plots ----- palt
+TS2palt <- allTreeSize %>% 
+  pivot_longer(cols = c("Smearing_N.1_palt.0", "Smearing_N.1_palt.0.25", "Smearing_N.1_palt.0.5")) %>% 
+  dplyr::mutate(Palt = factor(name) %>% 
+                  recode_factor(Smearing_N.1_palt.0 = "Palt = 0.00",Smearing_N.1_palt.0.25 = "Palt = 0.25", Smearing_N.1_palt.0.5 = "Palt = 0.50"),
+                `Tree Size` = value,
+                Model = factor("Smearing: N = 1")) %>% 
+  dplyr::select(Palt, `Tree Size`, Model)
+
+TS3palt <- allTreeSize %>% 
+  pivot_longer(cols = c("Smearing_N.5_palt.0", "Smearing_N.5_palt.0.25","Smearing_N.5_palt.0.5")) %>% 
+  dplyr::mutate(Palt = factor(name) %>% 
+                  recode_factor(Smearing_N.5_palt.0 = "Palt = 0.00",Smearing_N.5_palt.0.25 = "Palt = 0.25", Smearing_N.5_palt.0.5 = "Palt = 0.50"),
+                `Tree Size` = value,
+                Model = factor("Smearing: N = 5")) %>% 
+  dplyr::select(Palt, `Tree Size`, Model) 
+
+TS4palt <- allTreeSize %>% 
+  pivot_longer(cols = c("Smearing_N.10_palt.0", "Smearing_N.10_palt.0.25" , "Smearing_N.10_palt.0.5")) %>% 
+  dplyr::mutate(Palt = factor(name) %>% 
+                  recode_factor(Smearing_N.10_palt.0 = "Palt = 0.00",Smearing_N.10_palt.0.25 = "Palt = 0.25", Smearing_N.10_palt.0.5 = "Palt = 0.50"),
+                `Tree Size` = value,
+                Model = factor("Smearing: N = 10")) %>% 
+  dplyr::select(Palt, `Tree Size`, Model) 
+
+treesizeplot_grouped_palt <- (bind_rows(TS2palt, TS3palt, TS4palt)) %>% 
+  grouped_ggwithinstats(x=Palt, y = `Tree Size`,
+                type = "np", pairwise.display = "significant",
+                grouping.var = Model)
+
+treesizeplot_combined_palt <- (bind_rows(TS2palt, TS3palt, TS4palt)) %>% 
+  ggwithinstats(x=Palt, y = `Tree Size`,
+                type = "np", pairwise.display = "significant")
+
+
+########################## cool Rsq plots ----- palt
+RS2palt <- allRsquaredwide %>% 
+  pivot_longer(cols = c("smearing: N=1, palt=0.00", "smearing: N=1, palt=0.25", "smearing: N=1, palt=0.50")) %>% 
+  dplyr::mutate(Palt = factor(name) %>% 
+                  recode_factor(`smearing: N=1, palt=0.00` = "Palt = 0.00", `smearing: N=1, palt=0.25` = "Palt = 0.25", `smearing: N=1, palt=0.50` = "Palt = 0.50"),
+                Rsquared = value,
+                Model = factor("Smearing: N = 1")) %>% 
+  dplyr::select(Palt, Rsquared, Model)
+
+RS3palt <- allRsquaredwide %>% 
+  pivot_longer(cols = c("smearing: N=5, palt=0.00", "smearing: N=5, palt=0.25","smearing: N=5, palt=0.50")) %>% 
+  dplyr::mutate(Palt = factor(name) %>% 
+                  recode_factor(`smearing: N=5, palt=0.00` = "Palt = 0.00", `smearing: N=5, palt=0.25` = "Palt = 0.25", `smearing: N=5, palt=0.50` = "Palt = 0.50"),
+                Rsquared = value,
+                Model = factor("Smearing: N = 5")) %>% 
+  dplyr::select(Palt, Rsquared, Model) 
+
+RS4palt <- allRsquaredwide %>% 
+  pivot_longer(cols = c("smearing: N=10, palt=0.00", "smearing: N=10, palt=0.25" , "smearing: N=10, palt=0.50")) %>% 
+  dplyr::mutate(Palt = factor(name) %>% 
+                  recode_factor(`smearing: N=10, palt=0.00` = "Palt = 0.00", `smearing: N=10, palt=0.25` = "Palt = 0.25", `smearing: N=10, palt=0.50` = "Palt = 0.50"),
+                Rsquared = value,
+                Model = factor("Smearing: N = 10")) %>% 
+  dplyr::select(Palt, Rsquared, Model) 
+
+Rsquaredplot_grouped_palt <- (bind_rows(RS2palt, RS3palt, RS4palt)) %>% 
+  grouped_ggwithinstats(x=Palt, y = Rsquared,
+                type = "np", pairwise.display = "significant",
+                grouping.var = Model)
+
+Rsquaredplot_combined_palt <- (bind_rows(RS2palt, RS3palt, RS4palt)) %>% 
+  ggwithinstats(x=Palt, y = Rsquared,
+                type = "np", pairwise.display = "significant")
+
+
+save(list = c("plot_list",
+              "plot_list2",
+              "treesizeplot_grouped",
+              "treesizeplot_combined",
+              "Rsquaredplot_grouped",
+              "Rsquaredplot_combined",
+              "treesizeplot_grouped_palt",
+              "treesizeplot_combined_palt",
+              "Rsquaredplot_grouped_palt",
+              "Rsquaredplot_combined_palt"),
+     file = "coolplots.RData")
+
+(bind_rows(RS1, RS2, RS3, RS4)) %>% 
+  grouped_ggbetweenstats(x=`Generated Sample Size`, y = Rsquared,
+                grouping.var = Model) &
+    geom_hline(yintercept = mean(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
+    annotate("text", x = 0.6, y = mean(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC") &
+    geom_hline(yintercept = mean(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
+    annotate("text", x = 0.6, y = mean(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+
+(bind_rows(RS1, RS2, RS3, RS4)) %>% 
+  ggwithinstats(x=`Generated Sample Size`, y = Rsquared,
+                type = "np", pairwise.display = "significant",
+                centrality.type = "parametric") &
+  geom_hline(yintercept = mean(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = mean(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC") &
+  geom_hline(yintercept = mean(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
+  annotate("text", x = 0.6, y = mean(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+
+(bind_rows(RS1, RS2, RS3, RS4)) %>% 
+  ggbetweenstats(x=`Generated Sample Size`, y = Rsquared) &
+    geom_hline(yintercept = mean(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
+    annotate("text", x = 0.6, y = mean(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC") &
+    geom_hline(yintercept = mean(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
+    annotate("text", x = 0.6, y = mean(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
 ```
 
 # Make Tables
@@ -1630,3 +1781,47 @@ table2 %>% nice_table(., separate.header = TRUE, italics = seq(.),
 
 
 ```
+
+```{r}
+load("coolplots.Rdata")
+
+plot_list
+plot_list2
+
+Rsquaredplot_grouped &
+  geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
+  geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+Rsquaredplot_combined &
+  geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
+  geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+
+Rsquaredplot_grouped_palt &
+  geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
+  geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+Rsquaredplot_combined_palt &
+  geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
+  geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+
+treesizeplot_grouped &
+  geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
+treesizeplot_combined &
+  geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
+
+treesizeplot_grouped_palt &
+  geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
+treesizeplot_combined_palt &
+  geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
+  annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
+```
+
