@@ -1422,21 +1422,24 @@ ggplot(allMSElong, aes(x=Dataset, y=Rsquared, fill=Model)) +
   ggtitle(expression(R^2~" for every dataset"))
 
 
-ggplot(allMSElong[allMSElong$Dataset == "marriage",], aes(x=Rsquared, y=Model)) + 
+ACTviolins <- ggplot(allMSElong[allMSElong$Dataset == "ACT",], aes(x=Rsquared, y=Model)) + 
   scale_y_discrete(limits = rev(levels(allMSElong$Model))) +
-  geom_violin() +
+  geom_violin(fill = "grey90") +
   theme_apa() +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange") +
   xlab(expression(R^2)) +
-  ggtitle(expression(R^2 ~ " for every model on Marriage dataset"))
+  ggtitle("ACT")
 
-ggplot(allMSElong[allMSElong$Dataset == "ECLSKschool",], aes(x=Rsquared, y=Model)) + 
+schoolviolins <- ggplot(allMSElong[allMSElong$Dataset == "ECLSKschool",], aes(x=Rsquared, y=Model)) + 
   scale_y_discrete(limits = rev(levels(allMSElong$Model))) +
-  geom_violin() +
+  geom_violin(fill = "grey90") +
   theme_apa() +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange") +
   xlab(expression(R^2)) +
-  ggtitle(expression(R^2 ~ " for every model on ECLSKscience dataset"))
+  ggtitle("ECLSKschool") +
+  theme(axis.text.y=element_blank())
+
+ACTviolins + schoolviolins
 ```
 
 
@@ -1793,35 +1796,44 @@ Rsquaredplot_grouped &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
-Rsquaredplot_combined &
+fig2a <- Rsquaredplot_combined & # fig 2
   geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+fig2a
 
 Rsquaredplot_grouped_palt &
   geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
-Rsquaredplot_combined_palt &
+fig3a <- Rsquaredplot_combined_palt & # fig 3
   geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+fig3a
 
 treesizeplot_grouped &
   geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
-treesizeplot_combined &
+fig2b <- treesizeplot_combined & # fig 2
   geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
+fig2b
 
 treesizeplot_grouped_palt &
   geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
-treesizeplot_combined_palt &
+fig3b <- treesizeplot_combined_palt & # fig 3
   geom_hline(yintercept = median(allTreeSize$GLMM_tree), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
+fig3b
+```
+```{r}
+fig2a + fig2b
+fig3a + fig3b
+plot_list[["ACT"]] + plot_list[["ECLSKscience"]]
 ```
 
