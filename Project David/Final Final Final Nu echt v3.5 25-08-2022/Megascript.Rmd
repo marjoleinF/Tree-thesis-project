@@ -1144,7 +1144,7 @@ write.csv(x = MSE, file = "marriage_MSE.txt")
 write.csv(x = tree_size, file = "marriage_TreeSize.txt")
 ```
 
-# Make plots
+# load and combine MSE data
 
 ```{r}
 rm(list = ls())
@@ -1180,35 +1180,8 @@ allMSE <- do.call("rbind", MSEsets)
 TreeSizesets <- mget(grep(x = ls(), pattern = "TreeSize", value = TRUE)) 
 allTreeSize <- do.call("rbind", TreeSizesets)
 
-# # plot relative MSE's
-# relMSE <- apply(X = allMSE, MARGIN = 1, FUN = function(x){x/min(x)})
-# relMSElong <- melt(relMSE)
-# colnames(relMSElong) <- c("Model", "Dataset", "MSE")
-# relMSElong$Dataset <- gsub("_MSE\\.[0-9]+", "", relMSElong$Dataset)
-# relMSElong$Dataset <- as.factor(relMSElong$Dataset)
-# 
-# ggplot(relMSElong, aes(x=Dataset, y=MSE, fill=Model)) + 
-#   geom_boxplot() +
-#   facet_wrap(~Dataset, scales = "free", nrow = 1) +
-#   theme(axis.title=element_text(size=14,face="bold"),
-#         axis.text=element_text(size=12),
-#         legend.text=element_text(size=12),
-#         legend.title=element_text(size=14,face="bold"),
-#         plot.title=element_text(size=18,face="bold")) +
-#   ggtitle("Relative MSE for every Dataset")
-# 
-# ggplot(relMSElong, aes(x=MSE, y=Model, fill=Model)) + 
-#   geom_boxplot() +
-#   labs(x = "MSE / min(MSE)") +
-#   theme(legend.position = "none",
-#         axis.title=element_text(size=14,face="bold"),
-#         axis.text=element_text(size=12),
-#         legend.text=element_text(size=12),
-#         legend.title=element_text(size=14,face="bold"),
-#         plot.title=element_text(size=18,face="bold")) +
-#   ggtitle("Figure 4: Relative MSE combined")
 
-# plot absolute MSE's
+# MSE's long
 allMSElong <- melt(as.matrix(allMSE))
 allMSElong$Var3 <- allMSElong$Var1
 allMSElong$Var1 <- allMSElong$Var2
@@ -1218,18 +1191,7 @@ colnames(allMSElong) <- c("Model", "Dataset", "MSE")
 allMSElong$Dataset <- gsub("_MSE\\.[0-9]+", "", allMSElong$Dataset)
 allMSElong$Dataset <- as.factor(allMSElong$Dataset)
 
-# ggplot(allMSElong, aes(x=Model, y=MSE, fill=Model)) + 
-#     geom_boxplot() +
-#     facet_wrap(~Dataset, scales = "free", nrow = 1) +
-#   theme(axis.text.x=element_blank(),
-#         axis.title=element_text(size=14,face="bold"),
-#         axis.text=element_text(size=12),
-#         legend.text=element_text(size=12),
-#         legend.title=element_text(size=14,face="bold"),
-#         plot.title=element_text(size=18,face="bold")) +
-#   ggtitle("Figure 3: Absolute MSE for every dataset")
-
-# plot absolte TreeSize
+# TreeSize long
 allTreeSizelong <- melt(as.matrix(allTreeSize))
 allTreeSizelong$Var3 <- allTreeSizelong$Var1
 allTreeSizelong$Var1 <- allTreeSizelong$Var2
@@ -1239,16 +1201,14 @@ colnames(allTreeSizelong) <- c("Model", "Dataset", "Tree Size")
 allTreeSizelong$Dataset <- gsub("_TreeSize\\.[0-9]+", "", allTreeSizelong$Dataset)
 allTreeSizelong$Dataset <- as.factor(allTreeSizelong$Dataset)
 
-# ggplot(allTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
-#   geom_boxplot() +
-#   theme(legend.position = "none",
-#         axis.title=element_text(size=14,face="bold"),
-#         axis.text=element_text(size=12),
-#         legend.text=element_text(size=12),
-#         legend.title=element_text(size=14,face="bold"),
-#         plot.title=element_text(size=18,face="bold")) +
-#   ggtitle("Figure 2: Tree Size combined")
 
+rm(list=setdiff(ls(), c("allMSE", "allTreeSize", "allMSElong", "allTreeSizelong")))
+```
+
+# Plot tree size for every dataset
+
+```{r}
+# plot tree sizes
 ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
     geom_boxplot() +
     facet_wrap(~Dataset, scales = "free", nrow = 2) +
@@ -1262,35 +1222,11 @@ ggplot(allTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) +
   ggtitle("Figure 1: Tree Size for every dataset")
 
 levels(allTreeSizelong$Model) <- c("GLMM tree", "PPD: N=1", "PPD: N=5", "PPD: N=10", "smearing: N=1, palt=0.00", "smearing: N=5, palt=0.00", "smearing: N=10, palt=0.00", "smearing: N=1, palt=0.25", "smearing: N=5, palt=0.25", "smearing: N=10, palt=0.25", "smearing: N=1, palt=0.50", "smearing: N=5, palt=0.50", "smearing: N=10, palt=0.50")
+```
 
-# # plot relative TreeSize
-# relTreeSize <- apply(X = allTreeSize, MARGIN = 1, FUN = function(x){x/min(x)})
-# relTreeSizelong <- melt(relTreeSize)
-# colnames(relTreeSizelong) <- c("Model", "Dataset", "Tree Size")
-# relTreeSizelong$Dataset <- gsub("_TreeSize\\.[0-9]+", "", relTreeSizelong$Dataset)
-# relTreeSizelong$Dataset <- as.factor(relTreeSizelong$Dataset)
-# 
-# ggplot(relTreeSizelong, aes(x=`Tree Size`, y=Model, fill=Model)) + 
-#   geom_boxplot() +
-#   theme(legend.position = "none",
-#         axis.title=element_text(size=14,face="bold"),
-#         axis.text=element_text(size=12),
-#         legend.text=element_text(size=12),
-#         legend.title=element_text(size=14,face="bold"),
-#         plot.title=element_text(size=18,face="bold")) +
-#   ggtitle("Relative Tree Size combined")
-# 
-# ggplot(relTreeSizelong, aes(x=Model, y=`Tree Size`, fill=Model)) + 
-#     geom_boxplot() +
-#     facet_wrap(~Dataset, scales = "free", nrow = 1) +
-#   theme(axis.text.x=element_blank(),
-#         axis.title=element_text(size=14,face="bold"),
-#         axis.text=element_text(size=12),
-#         legend.text=element_text(size=12),
-#         legend.title=element_text(size=14,face="bold"),
-#         plot.title=element_text(size=18,face="bold")) +
-#   ggtitle("Figure 1: Relative Tree Size for every dataset")
+# Convert MSE to Rsq, and add to allMSElong
 
+```{r}
 ############ calculate variance for every dataset ############
 
 ### safety ###
@@ -1393,10 +1329,22 @@ allMSElong$Variance[(allMSElong$Dataset == "ECLSKscience")] <- var_science
 allMSElong$Variance[(allMSElong$Dataset == "marriage")] <- var_marriage
 allMSElong$Variance[(allMSElong$Dataset == "Safety")] <- var_safety
 
+# calculate all Rsquared
 allMSElong$Rsquared <- 1 - allMSElong$MSE / allMSElong$Variance
 
 levels(allMSElong$Model) <- c("GLMM tree","BART", "PPD: N=1", "PPD: N=5", "PPD: N=10", "smearing: N=1, palt=0.00", "smearing: N=5, palt=0.00", "smearing: N=10, palt=0.00", "smearing: N=1, palt=0.25", "smearing: N=5, palt=0.25", "smearing: N=10, palt=0.25", "smearing: N=1, palt=0.50", "smearing: N=5, palt=0.50", "smearing: N=10, palt=0.50")
 
+allRsquaredwide <- allMSElong %>% 
+  dplyr::mutate(fold = rep(1:100,98)) %>% 
+  dplyr::select(Model, Dataset, Rsquared, fold) %>% 
+  split(f = .$Dataset) %>% 
+  map(~ (.) %>% pivot_wider(names_from = Model, values_from = Rsquared)) %>%
+  bind_rows()
+```
+
+## plot Rsq for ecery dataset, boxplots + violins
+
+```{r}
 # plot combined Rsquared
 ggplot(allMSElong, aes(x=Rsquared, y=Model, fill=Model)) + 
   geom_boxplot() +
@@ -1422,28 +1370,58 @@ ggplot(allMSElong, aes(x=Dataset, y=Rsquared, fill=Model)) +
   ggtitle(expression(R^2~" for every dataset"))
 
 
-ACTviolins <- ggplot(allMSElong[allMSElong$Dataset == "ACT",], aes(x=Rsquared, y=Model)) + 
-  scale_y_discrete(limits = rev(levels(allMSElong$Model))) +
-  geom_violin(fill = "grey90") +
-  theme_apa() +
-  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange") +
-  xlab(expression(R^2)) +
-  ggtitle("ACT")
+# violin plots
 
-schoolviolins <- ggplot(allMSElong[allMSElong$Dataset == "ECLSKschool",], aes(x=Rsquared, y=Model)) + 
-  scale_y_discrete(limits = rev(levels(allMSElong$Model))) +
-  geom_violin(fill = "grey90") +
+# Define the colors for the specific models
+my_colors <- ggsci::pal_nejm("default")(4)
+nicelabs <- c(expression("Smearing: N"["gen"]*" = 10, p"["alt"]*" = 0.50"),
+              expression("Smearing: N"["gen"]*" = 5, p"["alt"]*" = 0.50"),
+              expression("Smearing: N"["gen"]*" = 1, p"["alt"]*" = 0.50"),
+              expression("Smearing: N"["gen"]*" = 10, p"["alt"]*" = 0.25"),
+              expression("Smearing: N"["gen"]*" = 5, p"["alt"]*" = 0.25"),
+              expression("Smearing: N"["gen"]*" = 1, p"["alt"]*" = 0.25"),
+              expression("Smearing: N"["gen"]*" = 10, p"["alt"]*" = 0"),
+              expression("Smearing: N"["gen"]*" = 5, p"["alt"]*" = 0"),
+              expression("Smearing: N"["gen"]*" = 1, p"["alt"]*" = 0"),
+              expression("PPD: N"["gen"]*" = 10"),
+              expression("PPD: N"["gen"]*" = 5"),
+              expression("PPD: N"["gen"]*" = 1"),
+              expression("M-BART"),
+              expression("GLMM tree"))
+
+ACTviolins <- ggplot(allMSElong[allMSElong$Dataset == "ACT",], aes(x=Rsquared, y=Model)) + 
+  scale_y_discrete(limits = rev(levels(allMSElong$Model)),
+                   labels = nicelabs) +
+  # Set the fill color for the specific models using scale_fill_manual
+  scale_fill_manual(values = c(my_colors, rep("grey90", times = 10))) +
+  geom_violin(aes(fill = ifelse(Model %in% c("GLMM tree", "BART", "PPD: N=5", "smearing: N=1, palt=0.00"), Model, "Others"))) +
   theme_apa() +
-  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange") +
-  xlab(expression(R^2)) +
-  ggtitle("ECLSKschool") +
-  theme(axis.text.y=element_blank())
+  stat_summary(fun = "mean", geom = "point", shape = 18, size = 3) +
+  xlab(expression(bold(R^2))) +
+  ylab(expression(bold(Model))) +
+  ggtitle("ACT") +
+  guides(fill = "none") + 
+  geom_hline(yintercept = c(9.5, 12.5), linetype = "dashed", color = "black", linewidth = 0.5) + 
+  coord_cartesian(xlim = c(-0.30,0.75))
+
+schoolviolins <- ggplot(allMSElong[allMSElong$Dataset == "ECLSKscience",], aes(x=Rsquared, y=Model)) + 
+  scale_y_discrete(limits = rev(levels(allMSElong$Model))) +
+  scale_fill_manual(values = c(my_colors, rep("grey90", times = 10))) +
+  geom_violin(aes(fill = ifelse(Model %in% c("GLMM tree", "BART", "PPD: N=1", "smearing: N=1, palt=0.00"), Model, "Others"))) +
+  theme_apa() +
+  stat_summary(fun = "mean", geom = "point", shape = 18, size = 3) +
+  xlab(expression(bold(R^2))) +
+  theme(axis.text.y = element_blank(),
+        axis.title.y = element_blank()) +
+  ggtitle("ECLSK science") +
+  guides(fill = "none") + 
+  geom_hline(yintercept = c(9.5, 12.5), linetype = "dashed", color = "black", size = 0.5) + 
+  coord_cartesian(xlim = c(-0.30,0.75))
 
 ACTviolins + schoolviolins
 ```
 
-
-# Statistical analyses
+# find highest Rsq, Statistical analyses, anova + tukey
 
 ```{r}
 # data preperation T_T
@@ -1465,7 +1443,7 @@ ACTviolins + schoolviolins
   # for every highest Rsq model, add every value of Rsq to the row
   Rsquared_empty <- as.data.frame(matrix(NA, nrow = nrow(Rsquared_best_means), ncol = 100))
   for(i in 1:nrow(Rsquared_best_means)){
-    tempRsquareds <- (allMSElong) %>%  
+    tempRsquareds <- allMSElong %>%  
       dplyr::select(Model, Dataset, Rsquared) %>% 
       dplyr::filter(Model == as.character(sjlabelled::to_character(Rsquared_best_means[i,1])) & Dataset == as.character(to_character(Rsquared_best_means[i,2]))) %>% 
       dplyr::select(Rsquared) %>% 
@@ -1499,6 +1477,64 @@ tukey_list <- Rsquared_best_total %>%
       )
 
 
+
+
+# statistical tests: ANOVA
+ANOVA_list <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  map(~ (.) %>% dplyr::select(-Dataset) %>%
+        stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long") %>% 
+        stats::aov(formula = Rsquared ~ Model) %>% 
+        summary
+      )
+
+# statistical tests: repeated measures ANOVA
+ANOVA_list_repeatedmeasures <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  map(~ (.) %>% dplyr::select(-Dataset) %>%
+        stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long") %>% 
+        rstatix::anova_test(., dv = Rsquared, wid = fold, within = Model) %>%
+        rstatix::get_anova_table()
+  )
+
+stars <- function(pval) {
+  if (pval < 0.001) {
+    return("****")
+  } else if (pval < 0.01) {
+    return("***")
+  } else if (pval < 0.05) {
+    return("**")
+  } else {
+    return("ns")
+  }
+}
+
+# paired t-tests bonferroni
+post_hoc_paired <- Rsquared_best_total %>% 
+  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
+  split(f = .$Dataset) %>% 
+  imap(~ (.x) %>% dplyr::select(-Dataset) %>%
+         stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long") %>%
+         rstatix::pairwise_t_test(formula = Rsquared ~ Model,
+                                            paired = T,
+                                            p.adjust.method = "bonferroni",
+                                            comparisons = list(c("GLMM tree",as.character(unique(.x$Model))[3]),
+                                                               c("GLMM tree",as.character(unique(.x$Model))[4]),
+                                                               c(as.character(unique(.x$Model))[3],as.character(unique(.x$Model))[4]))) %>% 
+         dplyr::mutate(p.ADJ = p.adj*7) %>% # also adjust for multiple datasets
+         rowwise() %>% 
+         dplyr::mutate(p.ADJ.signif = stars(p.ADJ))
+  )
+
+ANOVA_list_repeatedmeasures
+post_hoc_paired
+```
+
+# boxplots and GGbetweenstats, save to coolplots.Rdata
+
+```{r}
 # boxplots with tukey tests (i just found out ggbetweenstats is better)
 plot_list <- Rsquared_best_total %>% 
   dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
@@ -1515,14 +1551,6 @@ plot_list <- Rsquared_best_total %>%
              annotations = tukey_list[[.y]]$p.adj.signif
           )
   )
-
-test <- Rsquared_best_total %>% 
-  dplyr::select(-Rsquared.Mean, -Rsquared.SD) %>% 
-  split(f = .$Dataset) %>% 
-  map(~ (.) %>% dplyr::select(-Dataset) %>%
-        stats::reshape(varying = c(2:101), v.names = "Rsquared", idvar = "Model", timevar = "fold", direction = "long")
-      )
-
 
 # boxplots with tukey tests (i just found out ggbetweenstats is better)
 plot_list2 <- Rsquared_best_total %>% 
@@ -1552,7 +1580,7 @@ TS1 <- allTreeSize %>%
                   recode_factor(BaBart_N.1 = "N = 1", BaBart_N.5 = "N = 5", BaBart_N.10 = "N = 10"),
                 `Tree Size` = value,
                 Model = factor("PPD sampling")) %>% 
-  dplyr::select(`Generated Sample Size`, `Tree Size`, Model) 
+  dplyr::select(`Generated Sample Size`, `Tree Size`, Model)
   
 TS2 <- allTreeSize %>% 
   pivot_longer(cols = c("Smearing_N.1_palt.0", "Smearing_N.5_palt.0", "Smearing_N.10_palt.0")) %>% 
@@ -1582,11 +1610,21 @@ TS4 <- allTreeSize %>%
 treesizeplot_grouped <- (bind_rows(TS1, TS2, TS3, TS4)) %>% 
   grouped_ggwithinstats(x=`Generated Sample Size`, y = `Tree Size`,
                 type = "np", pairwise.display = "significant",
-                grouping.var = Model)
+                pairwise.comparisons = FALSE,
+                grouping.var = Model) &
+  scale_x_discrete(labels=c("N = 1" = expression("N"["gen"]*" = 1"),
+                            "N = 5" = expression("N"["gen"]*" = 5"),
+                            "N = 10" = expression("N"["gen"]*" = 10")))
 
 treesizeplot_combined <- (bind_rows(TS1, TS2, TS3, TS4)) %>% 
-  ggwithinstats(x=`Generated Sample Size`, y = `Tree Size`,
-                type = "np", pairwise.display = "significant")
+  ggwithinstats(x=`Generated Sample Size`, 
+                y = `Tree Size`,
+                type = "np",
+                pairwise.display = "significant",
+                pairwise.comparisons = FALSE) +
+  scale_x_discrete(labels=c("N = 1" = expression("N"["gen"]*" = 1"),
+                            "N = 5" = expression("N"["gen"]*" = 5"),
+                            "N = 10" = expression("N"["gen"]*" = 10")))
 
 
 ########################## cool Rsq plots ----- N
@@ -1596,7 +1634,7 @@ allRsquaredwide <- allMSElong %>%
   split(f = .$Dataset) %>% 
   map(~ (.) %>% pivot_wider(names_from = Model, values_from = Rsquared)) %>%
   bind_rows()
-colnames(allRsquaredwide)
+
 
 RS1 <- allRsquaredwide %>% 
   pivot_longer(cols = c(`PPD: N=1`, `PPD: N=5`, `PPD: N=10`)) %>% 
@@ -1634,12 +1672,23 @@ RS4 <- allRsquaredwide %>%
 Rsquaredplot_grouped <- (bind_rows(RS1, RS2, RS3, RS4)) %>% 
   grouped_ggwithinstats(x=`Generated Sample Size`, y = Rsquared,
                 type = "np", pairwise.display = "significant",
-                grouping.var = Model)
+                grouping.var = Model,
+                pairwise.comparisons = FALSE) &
+  scale_x_discrete(labels=c("N = 1" = expression("N"["gen"]*" = 1"), 
+                            "N = 5" = expression("N"["gen"]*" = 5"),
+                            "N = 10" = expression("N"["gen"]*" = 10"))) &
+  ylab(expression(bold("R"^"2")))
+  
 
 Rsquaredplot_combined <- (bind_rows(RS1, RS2, RS3, RS4)) %>% 
   ggwithinstats(x=`Generated Sample Size`, y = Rsquared,
                 type = "np", pairwise.display = "significant",
-                pointpath = TRUE)
+                pointpath = TRUE,
+                pairwise.comparisons = FALSE) +
+  scale_x_discrete(labels=c("N = 1" = expression("N"["gen"]*" = 1"),
+                            "N = 5" = expression("N"["gen"]*" = 5"),
+                            "N = 10" = expression("N"["gen"]*" = 10"))) + 
+  ylab(expression(bold("R"^"2")))
 
 
 ########################## cool Tree Size plots ----- palt
@@ -1670,11 +1719,22 @@ TS4palt <- allTreeSize %>%
 treesizeplot_grouped_palt <- (bind_rows(TS2palt, TS3palt, TS4palt)) %>% 
   grouped_ggwithinstats(x=Palt, y = `Tree Size`,
                 type = "np", pairwise.display = "significant",
-                grouping.var = Model)
+                grouping.var = Model,
+                pairwise.comparisons = FALSE) &
+  scale_x_discrete(labels=c("Palt = 0.00" = expression("p"["alt"]*" = 0"), 
+                            "Palt = 0.25" = expression("p"["alt"]*" = 0.25"),
+                            "Palt = 0.50" = expression("p"["alt"]*" = 0.50"))) &
+  xlab(expression(bold("Level of permutation (p"["alt"]*")")))
 
 treesizeplot_combined_palt <- (bind_rows(TS2palt, TS3palt, TS4palt)) %>% 
   ggwithinstats(x=Palt, y = `Tree Size`,
-                type = "np", pairwise.display = "significant")
+                type = "np",
+                pairwise.display = "significant",
+                pairwise.comparisons = FALSE) +
+  scale_x_discrete(labels=c("Palt = 0.00" = expression("p"["alt"]*" = 0"), 
+                            "Palt = 0.25" = expression("p"["alt"]*" = 0.25"),
+                            "Palt = 0.50" = expression("p"["alt"]*" = 0.50"))) + 
+  xlab(expression(bold("Level of permutation (p"["alt"]*")")))
 
 
 ########################## cool Rsq plots ----- palt
@@ -1705,15 +1765,27 @@ RS4palt <- allRsquaredwide %>%
 Rsquaredplot_grouped_palt <- (bind_rows(RS2palt, RS3palt, RS4palt)) %>% 
   grouped_ggwithinstats(x=Palt, y = Rsquared,
                 type = "np", pairwise.display = "significant",
-                grouping.var = Model)
+                grouping.var = Model,
+                pairwise.comparisons = FALSE) &
+  scale_x_discrete(labels=c("Palt = 0.00" = expression("p"["alt"]*" = 0"), 
+                            "Palt = 0.25" = expression("p"["alt"]*" = 0.25"),
+                            "Palt = 0.50" = expression("p"["alt"]*" = 0.50"))) & 
+  xlab(expression(bold("Level of permutation (p"["alt"]*")"))) &
+  ylab(expression(bold("R"^"2")))
 
 Rsquaredplot_combined_palt <- (bind_rows(RS2palt, RS3palt, RS4palt)) %>% 
   ggwithinstats(x=Palt, y = Rsquared,
-                type = "np", pairwise.display = "significant")
+                type = "np", pairwise.display = "significant",
+                pairwise.comparisons = FALSE) +
+  scale_x_discrete(labels=c("Palt = 0.00" = expression("p"["alt"]*" = 0"), 
+                            "Palt = 0.25" = expression("p"["alt"]*" = 0.25"),
+                            "Palt = 0.50" = expression("p"["alt"]*" = 0.50"))) + 
+  xlab(expression(bold("Level of permutation (p"["alt"]*")"))) +
+  ylab(expression(bold("R"^"2")))
 
 
-save(list = c("plot_list",
-              "plot_list2",
+save(list = c("plot_list", # tukey tests for best models -- ggplots
+              "plot_list2",# tukey tests for best models -- ggbetweenplots
               "treesizeplot_grouped",
               "treesizeplot_combined",
               "Rsquaredplot_grouped",
@@ -1723,30 +1795,6 @@ save(list = c("plot_list",
               "Rsquaredplot_grouped_palt",
               "Rsquaredplot_combined_palt"),
      file = "coolplots.RData")
-
-(bind_rows(RS1, RS2, RS3, RS4)) %>% 
-  grouped_ggbetweenstats(x=`Generated Sample Size`, y = Rsquared,
-                grouping.var = Model) &
-    geom_hline(yintercept = mean(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
-    annotate("text", x = 0.6, y = mean(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC") &
-    geom_hline(yintercept = mean(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
-    annotate("text", x = 0.6, y = mean(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
-
-(bind_rows(RS1, RS2, RS3, RS4)) %>% 
-  ggwithinstats(x=`Generated Sample Size`, y = Rsquared,
-                type = "np", pairwise.display = "significant",
-                centrality.type = "parametric") &
-  geom_hline(yintercept = mean(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
-  annotate("text", x = 0.6, y = mean(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC") &
-  geom_hline(yintercept = mean(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
-  annotate("text", x = 0.6, y = mean(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
-
-(bind_rows(RS1, RS2, RS3, RS4)) %>% 
-  ggbetweenstats(x=`Generated Sample Size`, y = Rsquared) &
-    geom_hline(yintercept = mean(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
-    annotate("text", x = 0.6, y = mean(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC") &
-    geom_hline(yintercept = mean(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
-    annotate("text", x = 0.6, y = mean(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
 ```
 
 # Make Tables
@@ -1785,6 +1833,8 @@ table2 %>% nice_table(., separate.header = TRUE, italics = seq(.),
 
 ```
 
+## make combined plots
+
 ```{r}
 load("coolplots.Rdata")
 
@@ -1795,24 +1845,24 @@ Rsquaredplot_grouped &
   geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
-  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`M-BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
 fig2a <- Rsquaredplot_combined & # fig 2
   geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
-  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`M-BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
 fig2a
 
 Rsquaredplot_grouped_palt &
   geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
-  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`M-BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
 fig3a <- Rsquaredplot_combined_palt & # fig 3
   geom_hline(yintercept = median(allRsquaredwide$`GLMM tree`), linetype = "dashed", color = "#0000CC") &
   annotate("text", x = 0.6, y = median(allRsquaredwide$`GLMM tree`), label = "italic(`GLMM`)", vjust = 1.5, parse = TRUE, color = "#0000CC") &
   geom_hline(yintercept = median(allRsquaredwide$BART), linetype = "dashed", color = "#FF0000") &
-  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
+  annotate("text", x = 0.6, y = median(allRsquaredwide$BART), label = "italic(`M-BART`)", vjust = -0.5, parse = TRUE, color = "#FF0000")
 fig3a
 
 treesizeplot_grouped &
@@ -1831,9 +1881,23 @@ fig3b <- treesizeplot_combined_palt & # fig 3
   annotate("text", x = 0.6, y = median(allTreeSize$GLMM_tree), label = "italic(`GLMM`)", vjust = -0.5, parse = TRUE, color = "#0000CC")
 fig3b
 ```
+
+## simple combined plots
+
 ```{r}
 fig2a + fig2b
 fig3a + fig3b
 plot_list[["ACT"]] + plot_list[["ECLSKscience"]]
 ```
+
+
+```{r}
+load("coolplots.RData")
+
+```
+
+
+
+
+
 

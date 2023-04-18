@@ -1,0 +1,92 @@
+{
+  "Table Number": "2",
+  "Title": "R^{2} and Tree Size for ACT and ECLSK science datasets where generated data is N_{gen} = 10 times the size of the original dataset",
+  "Footer": "For Smearing-based BA GLMM trees, only the model with the highest R^{2} is displayed here. For the complete results see Appendix 1 and Appendix 2.",
+  "Groups": [
+    null,
+    "ACT",
+    "ACT",
+    "ACT",
+    "ECLSK science",
+    "ECLSK science",
+    "ECLSK science"
+  ],
+  "Headers": [
+    "Results",
+    "GLMM tree",
+    "PPD: N = 10",
+    "Smearing: N = 10, p_{alt} = 0",
+    "GLMM tree",
+    "PPD: N = 10",
+    "Smearing: N = 10, p_{alt} = 0"
+  ],
+  "Column Widths": [
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100
+  ],
+  "Data": [
+    [
+      "Mean R^{2} (SD)",
+      "0.04 (0.16)",
+      "0.05 (0.17)",
+      "0.02 (0.16)",
+      "0.53 (0.07)",
+      "0.50 (0.07)",
+      "0.50 (0.06)"
+    ],
+    [
+      "Mean Tree Size (SD)",
+      "5.12 (1.44)",
+      "1.69 (0.90)",
+      "1.88 (1.15)",
+      "9.90 (1.50)",
+      "5.35 (2.67)",
+      "10.00 (2.67)"
+    ]
+  ],
+  "Style": {
+    "Headers": [
+      "apa-table-centeralign ",
+      "apa-table-centeralign ",
+      "apa-table-centeralign ",
+      "apa-table-centeralign ",
+      "apa-table-centeralign ",
+      "apa-table-centeralign ",
+      "apa-table-centeralign "
+    ],
+    "Data": [
+      [
+        "apa-table-leftalign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign"
+      ],
+      [
+        "apa-table-leftalign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign",
+        "apa-table-centeralign"
+      ]
+    ],
+    "Groups": [
+      "apa-table-centeralign",
+      "apa-table-centeralign",
+      "apa-table-centeralign",
+      "apa-table-centeralign",
+      "apa-table-centeralign",
+      "apa-table-centeralign",
+      "apa-table-centeralign"
+    ]
+  }
+}
